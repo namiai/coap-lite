@@ -33,7 +33,10 @@ pub struct Subject<Endpoint: Display + PartialEq> {
     phantom: PhantomData<Endpoint>,
 }
 
-impl<Endpoint> Subject<Endpoint> where Endpoint: Display + PartialEq + Clone {
+impl<Endpoint> Subject<Endpoint>
+where
+    Endpoint: Display + PartialEq + Clone,
+{
     /// Registers an observer interested in a resource.
     pub fn register<T: Packet>(&mut self, request: &CoapRequest<Endpoint, T>) {
         let observer_endpoint = request.source.as_ref().unwrap();
@@ -64,7 +67,10 @@ impl<Endpoint> Subject<Endpoint> where Endpoint: Display + PartialEq + Clone {
     }
 
     // Removes an observer from the interested resource.
-    pub fn deregister<T: Packet>(&mut self, request: &CoapRequest<Endpoint, T>) {
+    pub fn deregister<T: Packet>(
+        &mut self,
+        request: &CoapRequest<Endpoint, T>,
+    ) {
         let observer_endpoint = request.source.as_ref().unwrap();
         let resource_path = request.get_path();
         let token = request.message.get_token();
@@ -103,7 +109,10 @@ impl<Endpoint> Subject<Endpoint> where Endpoint: Display + PartialEq + Clone {
     }
 
     /// Resets the counter of unacknowledged updates for a resource observer.
-    pub fn acknowledge<T: Packet>(&mut self, request: &CoapRequest<Endpoint, T>) {
+    pub fn acknowledge<T: Packet>(
+        &mut self,
+        request: &CoapRequest<Endpoint, T>,
+    ) {
         let observer_endpoint = request.source.as_ref().unwrap();
         let resource_path = request.get_path();
         let token = request.message.get_token();
@@ -152,7 +161,7 @@ impl<Endpoint: Display + PartialEq + Clone> Default for Subject<Endpoint> {
 
 #[cfg(test)]
 mod test {
-    use crate::packet::PacketUdp;
+    use crate::PacketUdp;
 
     use super::{
         super::{
@@ -168,7 +177,7 @@ mod test {
     fn register() {
         let resource_path = "temp";
 
-        let mut request:CoapRequest<Endpoint,PacketUdp> = CoapRequest::new();
+        let mut request: CoapRequest<Endpoint, PacketUdp> = CoapRequest::new();
         request.source = Some(String::from("0.0.0.0"));
         request.set_method(Method::Get);
         request.set_path(resource_path.clone());
@@ -191,7 +200,8 @@ mod test {
     fn register_replace() {
         let resource_path = "temp";
 
-        let mut request1:CoapRequest<Endpoint, PacketUdp> = CoapRequest::new();
+        let mut request1: CoapRequest<Endpoint, PacketUdp> =
+            CoapRequest::new();
         request1.source = Some(String::from("0.0.0.0"));
         request1.set_method(Method::Get);
         request1.set_path(resource_path.clone());
@@ -200,7 +210,8 @@ mod test {
             .message
             .set_observe(vec![ObserveOption::Register as u8]);
 
-        let mut request2:CoapRequest<Endpoint, PacketUdp> = CoapRequest::new();
+        let mut request2: CoapRequest<Endpoint, PacketUdp> =
+            CoapRequest::new();
         request2.source = Some(String::from("0.0.0.0"));
         request2.set_method(Method::Get);
         request2.set_path(resource_path.clone());
@@ -228,7 +239,8 @@ mod test {
     fn ack_flow_ok() {
         let resource_path = "temp";
 
-        let mut request1:CoapRequest<Endpoint,PacketUdp> = CoapRequest::new();
+        let mut request1: CoapRequest<Endpoint, PacketUdp> =
+            CoapRequest::new();
         request1.source = Some(String::from("0.0.0.0"));
         request1.set_method(Method::Get);
         request1.set_path(resource_path.clone());
@@ -255,7 +267,7 @@ mod test {
             assert_eq!(observer.unacknowledged_messages, 1);
         }
 
-        let mut ack:CoapRequest<Endpoint, PacketUdp> = CoapRequest::new();
+        let mut ack: CoapRequest<Endpoint, PacketUdp> = CoapRequest::new();
         ack.source = Some(String::from("0.0.0.0"));
         ack.message.set_type(MessageType::Acknowledgement);
         ack.set_path(resource_path.clone());
@@ -277,7 +289,8 @@ mod test {
     fn ack_flow_forget_observer() {
         let resource_path = "temp";
 
-        let mut request1:CoapRequest<Endpoint, PacketUdp> = CoapRequest::new();
+        let mut request1: CoapRequest<Endpoint, PacketUdp> =
+            CoapRequest::new();
         request1.source = Some(String::from("0.0.0.0"));
         request1.set_method(Method::Get);
         request1.set_path(resource_path.clone());

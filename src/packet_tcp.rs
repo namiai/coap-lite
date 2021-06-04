@@ -8,7 +8,7 @@ use core::convert::TryInto;
 use super::{
     error::MessageError,
     header::MessageClass,
-    packet::{CoapOption, ContentFormat, encode_options, decode_options},
+    packet::{decode_options, encode_options, CoapOption, ContentFormat},
 };
 
 macro_rules! u8_to_unsigned_be {
@@ -139,7 +139,8 @@ impl PacketTcp {
     /// Decodes a byte slice and constructs the equivalent packet.
     pub fn from_bytes(buf: &[u8]) -> Result<PacketTcp, MessageError> {
         let mut idx: usize = 0;
-        let (packet_length, token_length) = Self::parse_length(&mut idx, &buf)?;
+        let (packet_length, token_length) =
+            Self::parse_length(&mut idx, &buf)?;
         if idx >= buf.len() {
             return Err(MessageError::InvalidHeader);
         }
@@ -162,7 +163,7 @@ impl PacketTcp {
         let options_len = idx - pre_options_idx;
         let payload = if packet_length > options_len && idx < buf.len() {
             if packet_length - options_len != buf.len() - idx {
-                return Err(MessageError::InvalidPacketLength)
+                return Err(MessageError::InvalidPacketLength);
             }
             idx += 1;
             buf[idx..].to_vec()
@@ -189,9 +190,11 @@ impl PacketTcp {
         if self.code != MessageClass::Empty && !self.payload.is_empty() {
             length += 1;
         }
-        let (length_byte, mut ext_length):(u8,Vec<u8>) = PacketTcp::encode_length(length)?;
+        let (length_byte, mut ext_length): (u8, Vec<u8>) =
+            PacketTcp::encode_length(length)?;
 
-        let mut buf_length = 1 + ext_length.len() + 1 + self.token.len() + self.payload.len();
+        let mut buf_length =
+            1 + ext_length.len() + 1 + self.token.len() + self.payload.len();
         if self.code != MessageClass::Empty && !self.payload.is_empty() {
             buf_length += 1;
         }
@@ -215,7 +218,8 @@ impl PacketTcp {
         Figure 4: CoAP Frame for Reliable Transports
 
         */
-        let len_token_len_byte = length_byte << 4 | self.token.len().to_be_bytes().last().copied().unwrap();
+        let len_token_len_byte = length_byte << 4
+            | self.token.len().to_be_bytes().last().copied().unwrap();
         buf.push(len_token_len_byte);
         buf.append(&mut ext_length);
         buf.push(self.code.into());
@@ -274,29 +278,32 @@ impl PacketTcp {
         };
         let token_length = byte & 0xF;
         *idx += add_idx;
-        let length:usize = length.try_into().map_err(|_| MessageError::InvalidHeader)?;
+        let length: usize =
+            length.try_into().map_err(|_| MessageError::InvalidHeader)?;
         Ok((length, token_length.into()))
     }
 
     fn encode_length(length: usize) -> Result<(u8, Vec<u8>), MessageError> {
         match length {
-            l @ 0..=12 => Ok((l.to_be_bytes().last().copied().unwrap(), Vec::new())),
+            l @ 0..=12 => {
+                Ok((l.to_be_bytes().last().copied().unwrap(), Vec::new()))
+            }
             l @ 13..=268 => {
                 let base = 13_u8;
-                let extension = (l-13).to_be_bytes().to_vec();
-                Ok((base, extension[extension.len()-1..].to_vec()))
+                let extension = (l - 13).to_be_bytes().to_vec();
+                Ok((base, extension[extension.len() - 1..].to_vec()))
             }
             l @ 269..=65804 => {
                 let base = 14_u8;
-                let extension = (l-269).to_be_bytes().to_vec();
-                Ok((base, extension[extension.len()-2..].to_vec()))
+                let extension = (l - 269).to_be_bytes().to_vec();
+                Ok((base, extension[extension.len() - 2..].to_vec()))
             }
             l @ 65805..=4_295_033_100 => {
                 let base = 15_u8;
-                let extension = (l-65805).to_be_bytes().to_vec();
-                Ok((base, extension[extension.len()-4..].to_vec()))
+                let extension = (l - 65805).to_be_bytes().to_vec();
+                Ok((base, extension[extension.len() - 4..].to_vec()))
             }
-            _ => Err(MessageError::InvalidPacketLength)
+            _ => Err(MessageError::InvalidPacketLength),
         }
     }
 
@@ -361,9 +368,7 @@ mod test {
 
     #[test]
     fn test_decode_packet_with_token() {
-        let buf = [
-            0x04, 0x01, 0x51, 0x55, 0x77, 0xe8
-        ];
+        let buf = [0x04, 0x01, 0x51, 0x55, 0x77, 0xe8];
         let packet = PacketTcp::from_bytes(&buf);
         assert!(packet.is_ok());
         let packet = packet.unwrap();
@@ -409,8 +414,8 @@ mod test {
     #[test]
     fn test_decode_packet_with_payload() {
         let buf = [
-            0x64, 0x45, 0x51, 0x55, 0x77, 0xe8, 0xff,
-            0x48, 0x65, 0x6c, 0x6c, 0x6f
+            0x64, 0x45, 0x51, 0x55, 0x77, 0xe8, 0xff, 0x48, 0x65, 0x6c, 0x6c,
+            0x6f,
         ];
         let packet = PacketTcp::from_bytes(&buf);
         assert!(packet.is_ok());
@@ -426,9 +431,9 @@ mod test {
     #[test]
     fn test_decode_packet_with_options_and_payload() {
         let buf = [
-            0xd4, 0x05, 0x01, 0x51, 0x55, 0x77, 0xe8, 0xb2, 0x48, 0x69, 0x04, 0x54,
-            0x65, 0x73, 0x74, 0x43, 0x61, 0x3d, 0x31,0xff,
-            0x48, 0x65, 0x6c, 0x6c, 0x6f
+            0xd4, 0x05, 0x01, 0x51, 0x55, 0x77, 0xe8, 0xb2, 0x48, 0x69, 0x04,
+            0x54, 0x65, 0x73, 0x74, 0x43, 0x61, 0x3d, 0x31, 0xff, 0x48, 0x65,
+            0x6c, 0x6c, 0x6f,
         ];
         let packet = PacketTcp::from_bytes(&buf);
         assert!(packet.is_ok());
@@ -460,8 +465,8 @@ mod test {
     #[test]
     fn test_decode_packet_with_payload_and_incorrect_length() {
         let buf = [
-            0x74, 0x45, 0x51, 0x55, 0x77, 0xe8, 0xff,
-            0x48, 0x65, 0x6c, 0x6c, 0x6f
+            0x74, 0x45, 0x51, 0x55, 0x77, 0xe8, 0xff, 0x48, 0x65, 0x6c, 0x6c,
+            0x6f,
         ];
         let packet = PacketTcp::from_bytes(&buf);
         assert!(packet.is_err());
@@ -480,7 +485,7 @@ mod test {
     fn test_encode_empty_packet_with_token() {
         let mut packet = PacketTcp::new();
         packet.set_code("2.03");
-        packet.set_token(vec![0x1,0x2]);
+        packet.set_token(vec![0x1, 0x2]);
         let bytes = packet.to_bytes();
         assert!(bytes.is_ok());
         assert_eq!(bytes.unwrap(), vec![0x02, 0x43, 0x1, 0x2]);
@@ -490,8 +495,7 @@ mod test {
     fn test_encode_empty_packet_with_token_and_options() {
         let mut packet = PacketTcp::new();
 
-        packet.code =
-            header::MessageClass::Request(header::RequestType::Get);
+        packet.code = header::MessageClass::Request(header::RequestType::Get);
 
         packet.set_token(vec![0x51, 0x55, 0x77, 0xE8]);
         packet.add_option(CoapOption::UriPath, b"Hi".to_vec());
@@ -502,8 +506,8 @@ mod test {
         assert_eq!(
             bytes.unwrap(),
             vec![
-                0xc4, 0x01, 0x51, 0x55, 0x77, 0xe8, 0xb2, 0x48,
-                0x69, 0x04, 0x54, 0x65, 0x73, 0x74, 0x43, 0x61, 0x3d, 0x31
+                0xc4, 0x01, 0x51, 0x55, 0x77, 0xe8, 0xb2, 0x48, 0x69, 0x04,
+                0x54, 0x65, 0x73, 0x74, 0x43, 0x61, 0x3d, 0x31
             ]
         );
     }
@@ -557,24 +561,23 @@ mod test {
         let res = res.unwrap();
         assert_eq!(res.0, 0xf);
         assert_eq!(res.1, vec![0x0, 0xbc, 0x8f, 0xf3]);
-
     }
 
-        #[test]
-        fn test_encode_packet_with_payload() {
-            let mut packet = PacketTcp::new();
-            packet.code =
-                header::MessageClass::Response(header::ResponseType::Content);
-            packet.set_token(vec![0xD0, 0xE2, 0x4D, 0xAC]);
-            packet.payload = "Hello".as_bytes().to_vec();
-            assert_eq!(
-                packet.to_bytes().unwrap(),
-                vec![
-                    0x64, 0x45, 0xD0, 0xE2, 0x4D, 0xAC, 0xFF, 0x48,
-                    0x65, 0x6C, 0x6C, 0x6F
-                ]
-            );
-        }
+    #[test]
+    fn test_encode_packet_with_payload() {
+        let mut packet = PacketTcp::new();
+        packet.code =
+            header::MessageClass::Response(header::ResponseType::Content);
+        packet.set_token(vec![0xD0, 0xE2, 0x4D, 0xAC]);
+        packet.payload = "Hello".as_bytes().to_vec();
+        assert_eq!(
+            packet.to_bytes().unwrap(),
+            vec![
+                0x64, 0x45, 0xD0, 0xE2, 0x4D, 0xAC, 0xFF, 0x48, 0x65, 0x6C,
+                0x6C, 0x6F
+            ]
+        );
+    }
 
     #[test]
     fn test_encode_decode_content_format() {

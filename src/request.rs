@@ -11,13 +11,13 @@ use super::{
 
 /// The CoAP request.
 #[derive(Clone, Debug)]
-pub struct CoapRequest<Endpoint, T:Packet> {
+pub struct CoapRequest<Endpoint, T: Packet> {
     pub message: T,
     pub response: Option<CoapResponse<T>>,
     pub source: Option<Endpoint>,
 }
 
-impl<Endpoint, T:Packet> CoapRequest<Endpoint, T> {
+impl<Endpoint, T: Packet> CoapRequest<Endpoint, T> {
     /// Creates a new request.
     pub fn new() -> CoapRequest<Endpoint, T> {
         Default::default()
@@ -37,7 +37,8 @@ impl<Endpoint, T:Packet> CoapRequest<Endpoint, T> {
 
     /// Sets the method.
     pub fn set_method(&mut self, method: Method) {
-        self.message.set_code_from_message_class(MessageClass::Request(method));
+        self.message
+            .set_code_from_message_class(MessageClass::Request(method));
     }
 
     /// Returns the method.
@@ -100,7 +101,7 @@ impl<Endpoint, T:Packet> CoapRequest<Endpoint, T> {
     }
 }
 
-impl<Endpoint, T:Packet> Default for CoapRequest<Endpoint, T> {
+impl<Endpoint, T: Packet> Default for CoapRequest<Endpoint, T> {
     fn default() -> Self {
         CoapRequest {
             response: None,
@@ -112,7 +113,7 @@ impl<Endpoint, T:Packet> Default for CoapRequest<Endpoint, T> {
 
 #[cfg(test)]
 mod test {
-    use crate::packet::PacketUdp;
+    use crate::PacketUdp;
 
     use super::{super::header::MessageType, *};
 
@@ -121,7 +122,8 @@ mod test {
     #[test]
     fn test_request_create() {
         let mut packet = PacketUdp::new();
-        let mut request1: CoapRequest<Endpoint, PacketUdp> = CoapRequest::new();
+        let mut request1: CoapRequest<Endpoint, PacketUdp> =
+            CoapRequest::new();
 
         packet.set_token(vec![0x17, 0x38]);
         request1.message.set_token(vec![0x17, 0x38]);

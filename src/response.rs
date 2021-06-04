@@ -9,7 +9,7 @@ pub struct CoapResponse<T: Packet> {
     pub message: T,
 }
 
-impl <T: Packet>CoapResponse<T> {
+impl<T: Packet> CoapResponse<T> {
     /// Creates a new response.
     pub fn new(request: &T) -> Option<CoapResponse<T>> {
         let mut packet = T::new();
@@ -20,7 +20,9 @@ impl <T: Packet>CoapResponse<T> {
             _ => return None,
         };
         packet.set_type(response_type);
-        packet.set_code_from_message_class(MessageClass::Response(Status::Content));
+        packet.set_code_from_message_class(MessageClass::Response(
+            Status::Content,
+        ));
         if let Some(m) = request.get_message_id() {
             packet.set_message_id(m)
         };
@@ -31,7 +33,8 @@ impl <T: Packet>CoapResponse<T> {
 
     /// Sets the status.
     pub fn set_status(&mut self, status: Status) {
-        self.message.set_code_from_message_class(MessageClass::Response(status))
+        self.message
+            .set_code_from_message_class(MessageClass::Response(status))
     }
 
     /// Returns the status.
@@ -99,14 +102,15 @@ impl <T: Packet>CoapResponse<T> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use super::super::packet::PacketUdp;
+    use crate::PacketUdp;
     #[test]
     fn test_new_response_valid() {
         for mtyp in vec![MessageType::Confirmable, MessageType::NonConfirmable]
         {
             let mut packet = PacketUdp::new();
             packet.set_type(mtyp);
-            let opt_resp:Option<CoapResponse<PacketUdp>> = CoapResponse::new(&packet);
+            let opt_resp: Option<CoapResponse<PacketUdp>> =
+                CoapResponse::new(&packet);
             assert!(opt_resp.is_some());
 
             let response = opt_resp.unwrap();

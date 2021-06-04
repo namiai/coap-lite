@@ -9,7 +9,8 @@ fn main() {
     println!("Payload {:x?}", &buf[..size]);
 
     let packet = Packet::from_bytes(&buf[..size]).unwrap();
-    let request:CoapRequest<SocketAddr, PacketUdp> = CoapRequest::from_packet(packet, src);
+    let request: CoapRequest<SocketAddr, PacketUdp> =
+        CoapRequest::from_packet(packet, src);
 
     let method = request.get_method().clone();
     let path = request.get_path();

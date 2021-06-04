@@ -134,6 +134,7 @@ pub mod link_format;
 mod observe;
 mod packet;
 mod packet_tcp;
+mod packet_udp;
 mod request;
 mod response;
 
@@ -144,7 +145,8 @@ pub use header::{
     Header, HeaderRaw, MessageClass, MessageType, RequestType, ResponseType,
 };
 pub use observe::Subject;
-pub use packet::{CoapOption, ContentFormat, ObserveOption, Packet, PacketUdp};
+pub use packet::{CoapOption, ContentFormat, ObserveOption, Packet};
 pub use packet_tcp::PacketTcp;
+pub use packet_udp::PacketUdp;
 pub use request::CoapRequest;
 pub use response::CoapResponse;

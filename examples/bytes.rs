@@ -1,11 +1,13 @@
 use coap_lite::{
-    CoapOption, MessageClass, MessageType, Packet, PacketUdp, RequestType, ResponseType,
+    CoapOption, MessageClass, MessageType, Packet, PacketUdp, RequestType,
+    ResponseType,
 };
 
 fn main() {
     let mut request = PacketUdp::new();
     request.set_message_id(23839);
-    request.set_code_from_message_class(MessageClass::Request(RequestType::Get));
+    request
+        .set_code_from_message_class(MessageClass::Request(RequestType::Get));
     request.set_token(vec![0, 0, 57, 116]);
     request.add_option(CoapOption::UriHost, b"localhost".to_vec());
     request.add_option(CoapOption::UriPath, b"tv1".to_vec());
