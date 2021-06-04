@@ -5,9 +5,11 @@ use alloc::{
 use core::convert::TryFrom;
 use core::convert::TryInto;
 
+use crate::Packet;
+
 use super::{
     error::MessageError,
-    header::MessageClass,
+    header::{MessageClass, MessageType},
     packet::{decode_options, encode_options, CoapOption, ContentFormat},
 };
 
@@ -30,47 +32,47 @@ impl Default for MessageClass {
 pub struct PacketTcp {
     code: MessageClass,
     token: Vec<u8>,
-    pub(crate) options: BTreeMap<u16, LinkedList<Vec<u8>>>,
-    pub payload: Vec<u8>,
+    options: BTreeMap<u16, LinkedList<Vec<u8>>>,
+    payload: Vec<u8>,
 }
 
 /// An iterator over the options of a packet.
 pub type Options<'a> =
     alloc::collections::btree_map::Iter<'a, u16, LinkedList<Vec<u8>>>;
 
-impl PacketTcp {
+impl Packet for PacketTcp {
     /// Creates a new packet.
-    pub fn new() -> PacketTcp {
+    fn new() -> PacketTcp {
         Default::default()
     }
 
     /// Returns an iterator over the options of the packet.
-    pub fn options(&self) -> Options {
+    fn options(&self) -> Options {
         self.options.iter()
     }
 
     /// Sets the token.
-    pub fn set_token(&mut self, token: Vec<u8>) {
+    fn set_token(&mut self, token: Vec<u8>) {
         self.token = token;
     }
 
     /// Returns the token.
-    pub fn get_token(&self) -> &Vec<u8> {
+    fn get_token(&self) -> &Vec<u8> {
         &self.token
     }
 
     /// Sets an option's values.
-    pub fn set_option(&mut self, tp: CoapOption, value: LinkedList<Vec<u8>>) {
+    fn set_option(&mut self, tp: CoapOption, value: LinkedList<Vec<u8>>) {
         self.options.insert(tp.into(), value);
     }
 
     /// Returns an option's values.
-    pub fn get_option(&self, tp: CoapOption) -> Option<&LinkedList<Vec<u8>>> {
+    fn get_option(&self, tp: CoapOption) -> Option<&LinkedList<Vec<u8>>> {
         self.options.get(&tp.into())
     }
 
     /// Adds an option value.
-    pub fn add_option(&mut self, tp: CoapOption, value: Vec<u8>) {
+    fn add_option(&mut self, tp: CoapOption, value: Vec<u8>) {
         let num = tp.into();
         if let Some(list) = self.options.get_mut(&num) {
             list.push_back(value);
@@ -83,14 +85,14 @@ impl PacketTcp {
     }
 
     /// Removes an option.
-    pub fn clear_option(&mut self, tp: CoapOption) {
+    fn clear_option(&mut self, tp: CoapOption) {
         if let Some(list) = self.options.get_mut(&tp.into()) {
             list.clear()
         }
     }
 
     /// Sets the content-format.
-    pub fn set_content_format(&mut self, cf: ContentFormat) {
+    fn set_content_format(&mut self, cf: ContentFormat) {
         let content_format: usize = cf.into();
         let msb = (content_format >> 8) as u8;
         let lsb = (content_format & 0xFF) as u8;
@@ -102,7 +104,7 @@ impl PacketTcp {
     }
 
     /// Returns the content-format.
-    pub fn get_content_format(&self) -> Option<ContentFormat> {
+    fn get_content_format(&self) -> Option<ContentFormat> {
         if let Some(list) = self.get_option(CoapOption::ContentFormat) {
             if let Some(vector) = list.front() {
                 if vector.len() == 0 {
@@ -120,13 +122,13 @@ impl PacketTcp {
     }
 
     /// Sets the value of the observe option.
-    pub fn set_observe(&mut self, value: Vec<u8>) {
+    fn set_observe(&mut self, value: Vec<u8>) {
         self.clear_option(CoapOption::Observe);
         self.add_option(CoapOption::Observe, value);
     }
 
     /// Returns the value of the observe option.
-    pub fn get_observe(&self) -> Option<&Vec<u8>> {
+    fn get_observe(&self) -> Option<&Vec<u8>> {
         if let Some(list) = self.get_option(CoapOption::Observe) {
             if let Some(flag) = list.front() {
                 return Some(flag);
@@ -137,7 +139,7 @@ impl PacketTcp {
     }
 
     /// Decodes a byte slice and constructs the equivalent packet.
-    pub fn from_bytes(buf: &[u8]) -> Result<PacketTcp, MessageError> {
+    fn from_bytes(buf: &[u8]) -> Result<PacketTcp, MessageError> {
         let mut idx: usize = 0;
         let (packet_length, token_length) =
             Self::parse_length(&mut idx, &buf)?;
@@ -180,7 +182,7 @@ impl PacketTcp {
     }
 
     /// Returns a vector of bytes representing the Packet.
-    pub fn to_bytes(&self) -> Result<Vec<u8>, MessageError> {
+    fn to_bytes(&self) -> Result<Vec<u8>, MessageError> {
         let mut options_bytes = encode_options(&self.options);
         // Length field is a sum of
         // 1. options length
@@ -232,6 +234,58 @@ impl PacketTcp {
         Ok(buf)
     }
 
+    /// Sets the message code from a string.
+    fn set_code(&mut self, code: &str) {
+        let code_vec: Vec<&str> = code.split('.').collect();
+        assert_eq!(code_vec.len(), 2);
+
+        let class_code = code_vec[0].parse::<u8>().unwrap();
+        let detail_code = code_vec[1].parse::<u8>().unwrap();
+        assert_eq!(0xF8 & class_code, 0);
+        assert_eq!(0xE0 & detail_code, 0);
+
+        self.code = (class_code << 5 | detail_code).into();
+    }
+
+    /// Returns the message code as a string.
+    fn get_code(&self) -> String {
+        self.code.to_string()
+    }
+
+    fn set_code_from_message_class(&mut self, message_class: MessageClass) {
+        self.code = message_class;
+    }
+
+    fn get_message_class(&self) -> MessageClass {
+        self.code
+    }
+
+    fn set_type(&mut self, _message_type: MessageType) {
+        return
+    }
+
+    fn get_type(&self) -> Option<MessageType> {
+        None
+    }
+
+    fn set_message_id(&mut self, _message_id: u16) {
+        return
+    }
+
+    fn get_message_id(&self) -> Option<u16> {
+        None
+    }
+
+    fn set_payload(&mut self, payload: Vec<u8>) {
+        self.payload = payload
+    }
+
+    fn get_payload(&self) -> &Vec<u8> {
+        &self.payload
+    }
+}
+
+impl PacketTcp {
     fn parse_length(
         idx: &mut usize,
         buf: &[u8],
@@ -305,24 +359,6 @@ impl PacketTcp {
             }
             _ => Err(MessageError::InvalidPacketLength),
         }
-    }
-
-    /// Sets the message code from a string.
-    pub fn set_code(&mut self, code: &str) {
-        let code_vec: Vec<&str> = code.split('.').collect();
-        assert_eq!(code_vec.len(), 2);
-
-        let class_code = code_vec[0].parse::<u8>().unwrap();
-        let detail_code = code_vec[1].parse::<u8>().unwrap();
-        assert_eq!(0xF8 & class_code, 0);
-        assert_eq!(0xE0 & detail_code, 0);
-
-        self.code = (class_code << 5 | detail_code).into();
-    }
-
-    /// Returns the message code as a string.
-    pub fn get_code(&self) -> String {
-        self.code.to_string()
     }
 }
 
