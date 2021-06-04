@@ -5,39 +5,38 @@ use super::{
 
 /// The CoAP response.
 #[derive(Clone, Debug)]
-pub struct CoapResponse {
-    pub message: Packet,
+pub struct CoapResponse<T: Packet> {
+    pub message: T,
 }
 
-impl CoapResponse {
+impl <T: Packet>CoapResponse<T> {
     /// Creates a new response.
-    pub fn new(request: &Packet) -> Option<CoapResponse> {
-        let mut packet = Packet::new();
+    pub fn new(request: &T) -> Option<CoapResponse<T>> {
+        let mut packet = T::new();
 
-        packet.header.set_version(1);
-        let response_type = match request.header.get_type() {
-            MessageType::Confirmable => MessageType::Acknowledgement,
-            MessageType::NonConfirmable => MessageType::NonConfirmable,
+        let response_type = match request.get_type() {
+            Some(MessageType::Confirmable) => MessageType::Acknowledgement,
+            Some(MessageType::NonConfirmable) => MessageType::NonConfirmable,
             _ => return None,
         };
-        packet.header.set_type(response_type);
-        packet.header.code = MessageClass::Response(Status::Content);
-        packet.header.message_id = request.header.message_id;
+        packet.set_type(response_type);
+        packet.set_code_from_message_class(MessageClass::Response(Status::Content));
+        if let Some(m) = request.get_message_id() {
+            packet.set_message_id(m)
+        };
         packet.set_token(request.get_token().clone());
-
-        packet.payload = request.payload.clone();
 
         Some(CoapResponse { message: packet })
     }
 
     /// Sets the status.
     pub fn set_status(&mut self, status: Status) {
-        self.message.header.code = MessageClass::Response(status);
+        self.message.set_code_from_message_class(MessageClass::Response(status))
     }
 
     /// Returns the status.
     pub fn get_status(&self) -> &Status {
-        match self.message.header.code {
+        match self.message.get_message_class() {
             MessageClass::Response(Status::Created) => &Status::Created,
             MessageClass::Response(Status::Deleted) => &Status::Deleted,
             MessageClass::Response(Status::Valid) => &Status::Valid,
@@ -100,25 +99,25 @@ impl CoapResponse {
 #[cfg(test)]
 mod test {
     use super::*;
-
+    use super::super::packet::PacketUdp;
     #[test]
     fn test_new_response_valid() {
         for mtyp in vec![MessageType::Confirmable, MessageType::NonConfirmable]
         {
-            let mut packet = Packet::new();
-            packet.header.set_type(mtyp);
-            let opt_resp = CoapResponse::new(&packet);
+            let mut packet = PacketUdp::new();
+            packet.set_type(mtyp);
+            let opt_resp:Option<CoapResponse<PacketUdp>> = CoapResponse::new(&packet);
             assert!(opt_resp.is_some());
 
             let response = opt_resp.unwrap();
-            assert_eq!(packet.payload, response.message.payload);
+            assert_eq!(packet.get_payload(), response.message.get_payload());
         }
     }
 
     #[test]
     fn test_new_response_invalid() {
-        let mut packet = Packet::new();
-        packet.header.set_type(MessageType::Acknowledgement);
+        let mut packet = PacketUdp::new();
+        packet.set_type(MessageType::Acknowledgement);
         assert!(CoapResponse::new(&packet).is_none());
     }
 }

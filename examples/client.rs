@@ -1,8 +1,8 @@
-use coap_lite::{CoapRequest, RequestType as Method};
+use coap_lite::{CoapRequest, Packet, PacketUdp, RequestType as Method};
 use std::net::{SocketAddr, UdpSocket};
 
 fn main() {
-    let mut request: CoapRequest<SocketAddr> = CoapRequest::new();
+    let mut request: CoapRequest<SocketAddr, PacketUdp> = CoapRequest::new();
 
     request.set_method(Method::Get);
     request.set_path("/test");

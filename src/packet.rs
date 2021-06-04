@@ -6,7 +6,7 @@ use core::convert::TryFrom;
 
 use super::{
     error::{InvalidContentFormat, InvalidObserve, MessageError},
-    header::{Header, HeaderRaw, MessageClass},
+    header::{Header, HeaderRaw, MessageClass, MessageType},
 };
 
 macro_rules! u8_to_unsigned_be {
@@ -197,53 +197,80 @@ impl From<ObserveOption> for usize {
     }
 }
 
+pub trait Packet: Sized {
+    fn new() -> Self;
+    fn options(&self) -> Options;
+    fn set_token(&mut self, token: Vec<u8>);
+    fn get_token(&self) -> &Vec<u8>;
+    fn set_option(&mut self, tp: CoapOption, value: LinkedList<Vec<u8>>);
+    fn get_option(&self, tp: CoapOption) -> Option<&LinkedList<Vec<u8>>>;
+    fn add_option(&mut self, tp: CoapOption, value: Vec<u8>);
+    fn clear_option(&mut self, tp: CoapOption);
+    fn set_content_format(&mut self, cf: ContentFormat);
+    fn get_content_format(&self) -> Option<ContentFormat>;
+    fn set_observe(&mut self, value: Vec<u8>);
+    fn get_observe(&self) -> Option<&Vec<u8>>;
+    fn from_bytes(buf: &[u8]) -> Result<Self, MessageError>;
+    fn to_bytes(&self) -> Result<Vec<u8>, MessageError>;
+    fn set_code(&mut self, code: &str);
+    fn get_code(&self) -> String;
+    fn set_code_from_message_class(&mut self, message_class: MessageClass);
+    fn get_message_class(&self) -> MessageClass;
+    fn set_type(&mut self, message_type: MessageType);
+    fn get_type(&self) -> Option<MessageType>;
+    fn set_message_id(&mut self, message_id: u16);
+    fn get_message_id(&self) -> Option<u16>;
+    fn set_payload(&mut self, payload: Vec<u8>);
+    fn get_payload(&self) -> &Vec<u8>;
+
+}
 /// The CoAP packet.
 #[derive(Debug, Clone, Default)]
-pub struct Packet {
-    pub header: Header,
+pub struct PacketUdp {
+    header: Header,
     token: Vec<u8>,
-    pub(crate) options: BTreeMap<u16, LinkedList<Vec<u8>>>,
-    pub payload: Vec<u8>,
+    options: BTreeMap<u16, LinkedList<Vec<u8>>>,
+    payload: Vec<u8>,
 }
 
 /// An iterator over the options of a packet.
 pub type Options<'a> =
     alloc::collections::btree_map::Iter<'a, u16, LinkedList<Vec<u8>>>;
 
-impl Packet {
+impl Packet for PacketUdp {
     /// Creates a new packet.
-    pub fn new() -> Packet {
+    fn new() -> PacketUdp {
         Default::default()
     }
 
     /// Returns an iterator over the options of the packet.
-    pub fn options(&self) -> Options {
+    fn options(&self) -> Options {
         self.options.iter()
     }
 
     /// Sets the token.
-    pub fn set_token(&mut self, token: Vec<u8>) {
+    fn set_token(&mut self, token: Vec<u8>) {
         self.header.set_token_length(token.len() as u8);
         self.token = token;
     }
 
     /// Returns the token.
-    pub fn get_token(&self) -> &Vec<u8> {
+    fn get_token(&self) -> &Vec<u8> {
         &self.token
     }
 
     /// Sets an option's values.
-    pub fn set_option(&mut self, tp: CoapOption, value: LinkedList<Vec<u8>>) {
+    fn set_option(&mut self, tp: CoapOption, value: LinkedList<Vec<u8>>) {
         self.options.insert(tp.into(), value);
     }
 
     /// Returns an option's values.
-    pub fn get_option(&self, tp: CoapOption) -> Option<&LinkedList<Vec<u8>>> {
+    fn get_option(&self, tp: CoapOption) -> Option<&LinkedList<Vec<u8>>> {
         self.options.get(&tp.into())
     }
 
     /// Adds an option value.
-    pub fn add_option(&mut self, tp: CoapOption, value: Vec<u8>) {
+    fn add_option(&mut self, tp: CoapOption, value: Vec<u8>) {
         let num = tp.into();
         if let Some(list) = self.options.get_mut(&num) {
             list.push_back(value);
@@ -256,14 +283,14 @@ impl Packet {
     }
 
     /// Removes an option.
-    pub fn clear_option(&mut self, tp: CoapOption) {
+    fn clear_option(&mut self, tp: CoapOption) {
         if let Some(list) = self.options.get_mut(&tp.into()) {
             list.clear()
         }
     }
 
     /// Sets the content-format.
-    pub fn set_content_format(&mut self, cf: ContentFormat) {
+    fn set_content_format(&mut self, cf: ContentFormat) {
         let content_format: usize = cf.into();
         let msb = (content_format >> 8) as u8;
         let lsb = (content_format & 0xFF) as u8;
@@ -275,7 +302,7 @@ impl Packet {
     }
 
     /// Returns the content-format.
-    pub fn get_content_format(&self) -> Option<ContentFormat> {
+    fn get_content_format(&self) -> Option<ContentFormat> {
         if let Some(list) = self.get_option(CoapOption::ContentFormat) {
             if let Some(vector) = list.front() {
                 if vector.len() == 0 {
@@ -293,13 +320,13 @@ impl Packet {
     }
 
     /// Sets the value of the observe option.
-    pub fn set_observe(&mut self, value: Vec<u8>) {
+    fn set_observe(&mut self, value: Vec<u8>) {
         self.clear_option(CoapOption::Observe);
         self.add_option(CoapOption::Observe, value);
     }
 
     /// Returns the value of the observe option.
-    pub fn get_observe(&self) -> Option<&Vec<u8>> {
+    fn get_observe(&self) -> Option<&Vec<u8>> {
         if let Some(list) = self.get_option(CoapOption::Observe) {
             if let Some(flag) = list.front() {
                 return Some(flag);
@@ -310,7 +337,7 @@ impl Packet {
     }
 
     /// Decodes a byte slice and constructs the equivalent packet.
-    pub fn from_bytes(buf: &[u8]) -> Result<Packet, MessageError> {
+    fn from_bytes(buf: &[u8]) -> Result<PacketUdp, MessageError> {
         let header_result = HeaderRaw::try_from(buf);
         match header_result {
             Ok(raw_header) => {
@@ -336,7 +363,7 @@ impl Packet {
                     Vec::new()
                 };
 
-                Ok(Packet {
+                Ok(PacketUdp {
                     header,
                     token,
                     options,
@@ -348,7 +375,7 @@ impl Packet {
     }
 
     /// Returns a vector of bytes representing the Packet.
-    pub fn to_bytes(&self) -> Result<Vec<u8>, MessageError> {
+    fn to_bytes(&self) -> Result<Vec<u8>, MessageError> {
         let mut options_bytes = encode_options(&self.options);
         let mut buf_length = 4 + self.payload.len() + self.token.len();
         if self.header.code != MessageClass::Empty && !self.payload.is_empty()
@@ -383,150 +410,189 @@ impl Packet {
         }
     }
 
+    fn set_code(&mut self, code: &str) {
+        self.header.set_code(code);
+    }
+
+    fn get_code(&self) -> String {
+        self.header.get_code()
+    }
+
+    fn set_code_from_message_class(&mut self, message_class: MessageClass) {
+        self.header.code = message_class;
+    }
+
+    fn get_message_class(&self) -> MessageClass {
+        self.header.code
+    }
+
+    fn set_type(&mut self, message_type: MessageType) {
+        self.header.set_type(message_type)
+    }
+
+    fn get_type(&self) -> Option<MessageType> {
+        Some(self.header.get_type())
+    }
+
+    fn set_message_id(&mut self, message_id: u16) {
+        self.header.message_id = message_id;
+    }
+
+    fn get_message_id(&self) -> Option<u16> {
+        Some(self.header.message_id)
+    }
+
+    fn set_payload(&mut self, payload: Vec<u8>) {
+        self.payload = payload;
+    }
+
+    fn get_payload(&self) -> &Vec<u8> {
+        &self.payload
+    }
 }
 
-    pub fn decode_options(idx:&mut usize, buf: &[u8]) -> Result<BTreeMap<u16,LinkedList<Vec<u8>>>, MessageError> {
-        let mut options_number = 0;
-        let mut options: BTreeMap<u16, LinkedList<Vec<u8>>> =
-            BTreeMap::new();
-        while *idx < buf.len() {
-            let byte = buf[*idx];
+pub fn decode_options(idx:&mut usize, buf: &[u8]) -> Result<BTreeMap<u16,LinkedList<Vec<u8>>>, MessageError> {
+    let mut options_number = 0;
+    let mut options: BTreeMap<u16, LinkedList<Vec<u8>>> =
+        BTreeMap::new();
+    while *idx < buf.len() {
+        let byte = buf[*idx];
 
-            if byte == 255 || *idx > buf.len() {
-                break;
-            }
+        if byte == 255 || *idx > buf.len() {
+            break;
+        }
 
-            let mut delta = (byte >> 4) as u16;
-            let mut length = (byte & 0xF) as usize;
+        let mut delta = (byte >> 4) as u16;
+        let mut length = (byte & 0xF) as usize;
 
-            *idx += 1;
+        *idx += 1;
 
-            // Check for special delta characters
-            match delta {
-                13 => {
-                    if *idx >= buf.len() {
-                        return Err(MessageError::InvalidOptionLength);
-                    }
-                    delta = (buf[*idx] + 13).into();
-                    *idx += 1;
-                }
-                14 => {
-                    if *idx + 1 >= buf.len() {
-                        return Err(MessageError::InvalidOptionLength);
-                    }
-
-                    delta = u16::from_be(u8_to_unsigned_be!(
-                        buf,
-                        *idx,
-                        *idx + 1,
-                        u16
-                    )) + 269;
-                    *idx += 2;
-                }
-                15 => {
-                    return Err(MessageError::InvalidOptionDelta);
-                }
-                _ => {}
-            };
-
-            // Check for special length characters
-            match length {
-                13 => {
-                    if *idx >= buf.len() {
-                        return Err(MessageError::InvalidOptionLength);
-                    }
-
-                    length = buf[*idx] as usize + 13;
-                    *idx += 1;
-                }
-                14 => {
-                    if *idx + 1 >= buf.len() {
-                        return Err(MessageError::InvalidOptionLength);
-                    }
-
-                    length = (u16::from_be(u8_to_unsigned_be!(
-                        buf,
-                        *idx,
-                        *idx + 1,
-                        u16
-                    )) + 269)
-                        as usize;
-                    *idx += 2;
-                }
-                15 => {
+        // Check for special delta characters
+        match delta {
+            13 => {
+                if *idx >= buf.len() {
                     return Err(MessageError::InvalidOptionLength);
                 }
-                _ => {}
-            };
+                delta = (buf[*idx] + 13).into();
+                *idx += 1;
+            }
+            14 => {
+                if *idx + 1 >= buf.len() {
+                    return Err(MessageError::InvalidOptionLength);
+                }
 
-            options_number += delta;
+                delta = u16::from_be(u8_to_unsigned_be!(
+                    buf,
+                    *idx,
+                    *idx + 1,
+                    u16
+                )) + 269;
+                *idx += 2;
+            }
+            15 => {
+                return Err(MessageError::InvalidOptionDelta);
+            }
+            _ => {}
+        };
 
-            let end = *idx + length;
-            if end > buf.len() {
+        // Check for special length characters
+        match length {
+            13 => {
+                if *idx >= buf.len() {
+                    return Err(MessageError::InvalidOptionLength);
+                }
+
+                length = buf[*idx] as usize + 13;
+                *idx += 1;
+            }
+            14 => {
+                if *idx + 1 >= buf.len() {
+                    return Err(MessageError::InvalidOptionLength);
+                }
+
+                length = (u16::from_be(u8_to_unsigned_be!(
+                    buf,
+                    *idx,
+                    *idx + 1,
+                    u16
+                )) + 269)
+                    as usize;
+                *idx += 2;
+            }
+            15 => {
                 return Err(MessageError::InvalidOptionLength);
             }
-            let options_value = buf[*idx..end].to_vec();
+            _ => {}
+        };
 
-            options
-                .entry(options_number)
-                .or_insert_with(LinkedList::new)
-                .push_back(options_value);
+        options_number += delta;
 
-            *idx += length;
+        let end = *idx + length;
+        if end > buf.len() {
+            return Err(MessageError::InvalidOptionLength);
         }
-        Ok(options)
+        let options_value = buf[*idx..end].to_vec();
+
+        options
+            .entry(options_number)
+            .or_insert_with(LinkedList::new)
+            .push_back(options_value);
+
+        *idx += length;
     }
+    Ok(options)
+}
 
-    pub fn encode_options(options: &BTreeMap<u16, LinkedList<Vec<u8>>>) -> Vec<u8>{
-        let mut options_delta_length = 0;
-        let mut options_bytes: Vec<u8> = Vec::new();
-        for (number, value_list) in options {
-            for value in value_list.iter() {
-                let mut header: Vec<u8> = Vec::with_capacity(1 + 2 + 2);
-                let delta = number - options_delta_length;
+pub fn encode_options(options: &BTreeMap<u16, LinkedList<Vec<u8>>>) -> Vec<u8>{
+    let mut options_delta_length = 0;
+    let mut options_bytes: Vec<u8> = Vec::new();
+    for (number, value_list) in options {
+        for value in value_list.iter() {
+            let mut header: Vec<u8> = Vec::with_capacity(1 + 2 + 2);
+            let delta = number - options_delta_length;
 
-                let mut byte: u8 = 0;
-                if delta <= 12 {
-                    byte |= (delta << 4) as u8;
-                } else if delta < 269 {
-                    byte |= 13 << 4;
-                } else {
-                    byte |= 14 << 4;
-                }
-                if value.len() <= 12 {
-                    byte |= value.len() as u8;
-                } else if value.len() < 269 {
-                    byte |= 13;
-                } else {
-                    byte |= 14;
-                }
-                header.push(byte);
-
-                if delta > 12 && delta < 269 {
-                    header.push((delta - 13) as u8);
-                } else if delta >= 269 {
-                    let fix = (delta - 269) as u16;
-                    header.push((fix >> 8) as u8);
-                    header.push((fix & 0xFF) as u8);
-                }
-
-                if value.len() > 12 && value.len() < 269 {
-                    header.push((value.len() - 13) as u8);
-                } else if value.len() >= 269 {
-                    let fix = (value.len() - 269) as u16;
-                    header.push((fix >> 8) as u8);
-                    header.push((fix & 0xFF) as u8);
-                }
-
-                options_delta_length += delta;
-
-                options_bytes.reserve(header.len() + value.len());
-                options_bytes.append(&mut header);
-                options_bytes.extend_from_slice(&value);
+            let mut byte: u8 = 0;
+            if delta <= 12 {
+                byte |= (delta << 4) as u8;
+            } else if delta < 269 {
+                byte |= 13 << 4;
+            } else {
+                byte |= 14 << 4;
             }
+            if value.len() <= 12 {
+                byte |= value.len() as u8;
+            } else if value.len() < 269 {
+                byte |= 13;
+            } else {
+                byte |= 14;
+            }
+            header.push(byte);
+
+            if delta > 12 && delta < 269 {
+                header.push((delta - 13) as u8);
+            } else if delta >= 269 {
+                let fix = (delta - 269) as u16;
+                header.push((fix >> 8) as u8);
+                header.push((fix & 0xFF) as u8);
+            }
+
+            if value.len() > 12 && value.len() < 269 {
+                header.push((value.len() - 13) as u8);
+            } else if value.len() >= 269 {
+                let fix = (value.len() - 269) as u16;
+                header.push((fix >> 8) as u8);
+                header.push((fix & 0xFF) as u8);
+            }
+
+            options_delta_length += delta;
+
+            options_bytes.reserve(header.len() + value.len());
+            options_bytes.append(&mut header);
+            options_bytes.extend_from_slice(&value);
         }
-        options_bytes
     }
+    options_bytes
+}
 
 #[cfg(test)]
 mod test {
@@ -538,7 +604,7 @@ mod test {
             0x44, 0x01, 0x84, 0x9e, 0x51, 0x55, 0x77, 0xe8, 0xb2, 0x48, 0x69,
             0x04, 0x54, 0x65, 0x73, 0x74, 0x43, 0x61, 0x3d, 0x31,
         ];
-        let packet = Packet::from_bytes(&buf);
+        let packet = PacketUdp::from_bytes(&buf);
         assert!(packet.is_ok());
         let packet = packet.unwrap();
         assert_eq!(packet.header.get_version(), 1);
@@ -574,7 +640,7 @@ mod test {
             0x64, 0x45, 0x13, 0xFD, 0xD0, 0xE2, 0x4D, 0xAC, 0xFF, 0x48, 0x65,
             0x6C, 0x6C, 0x6F,
         ];
-        let packet = Packet::from_bytes(&buf);
+        let packet = PacketUdp::from_bytes(&buf);
         assert!(packet.is_ok());
         let packet = packet.unwrap();
         assert_eq!(packet.header.get_version(), 1);
@@ -594,7 +660,7 @@ mod test {
 
     #[test]
     fn test_encode_packet_with_options() {
-        let mut packet = Packet::new();
+        let mut packet = PacketUdp::new();
         packet.header.set_version(1);
         packet.header.set_type(header::MessageType::Confirmable);
         packet.header.code =
@@ -615,7 +681,7 @@ mod test {
 
     #[test]
     fn test_encode_packet_with_payload() {
-        let mut packet = Packet::new();
+        let mut packet = PacketUdp::new();
         packet.header.set_version(1);
         packet.header.set_type(header::MessageType::Acknowledgement);
         packet.header.code =
@@ -634,7 +700,7 @@ mod test {
 
     #[test]
     fn test_encode_decode_content_format() {
-        let mut packet = Packet::new();
+        let mut packet = PacketUdp::new();
         packet.set_content_format(ContentFormat::TextPlain);
         assert_eq!(
             ContentFormat::TextPlain,
@@ -644,7 +710,7 @@ mod test {
 
     #[test]
     fn test_encode_decode_content_format_without_msb() {
-        let mut packet = Packet::new();
+        let mut packet = PacketUdp::new();
         packet.set_content_format(ContentFormat::ApplicationJSON);
         assert_eq!(
             ContentFormat::ApplicationJSON,
@@ -654,7 +720,7 @@ mod test {
 
     #[test]
     fn test_encode_decode_content_format_with_msb() {
-        let mut packet = Packet::new();
+        let mut packet = PacketUdp::new();
         packet.set_content_format(ContentFormat::ApplicationSensmlXML);
         assert_eq!(
             ContentFormat::ApplicationSensmlXML,
@@ -664,7 +730,7 @@ mod test {
 
     #[test]
     fn test_decode_empty_content_format() {
-        let packet = Packet::new();
+        let packet = PacketUdp::new();
         assert!(packet.get_content_format().is_none());
     }
 
@@ -700,7 +766,7 @@ mod test {
 
     #[test]
     fn options() {
-        let mut p = Packet::new();
+        let mut p = PacketUdp::new();
         p.add_option(CoapOption::UriHost, vec![0]);
         p.add_option(CoapOption::UriPath, vec![1]);
         p.add_option(CoapOption::ETag, vec![2]);
@@ -708,7 +774,7 @@ mod test {
         assert_eq!(3, p.options().len());
 
         let bytes = p.to_bytes().unwrap();
-        let mut pp = Packet::from_bytes(&bytes).unwrap();
+        let mut pp = PacketUdp::from_bytes(&bytes).unwrap();
         assert_eq!(2, pp.options().len());
 
         let mut values = LinkedList::new();
@@ -720,7 +786,7 @@ mod test {
 
     #[test]
     fn observe() {
-        let mut p = Packet::new();
+        let mut p = PacketUdp::new();
         assert_eq!(None, p.get_observe());
         p.set_observe(vec![0]);
         assert_eq!(Some(&vec![0]), p.get_observe());

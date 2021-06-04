@@ -11,23 +11,23 @@ use super::{
 
 /// The CoAP request.
 #[derive(Clone, Debug)]
-pub struct CoapRequest<Endpoint> {
-    pub message: Packet,
-    pub response: Option<CoapResponse>,
+pub struct CoapRequest<Endpoint, T:Packet> {
+    pub message: T,
+    pub response: Option<CoapResponse<T>>,
     pub source: Option<Endpoint>,
 }
 
-impl<Endpoint> CoapRequest<Endpoint> {
+impl<Endpoint, T:Packet> CoapRequest<Endpoint, T> {
     /// Creates a new request.
-    pub fn new() -> CoapRequest<Endpoint> {
+    pub fn new() -> CoapRequest<Endpoint, T> {
         Default::default()
     }
 
     /// Creates a request from a packet.
     pub fn from_packet(
-        packet: Packet,
+        packet: T,
         source: Endpoint,
-    ) -> CoapRequest<Endpoint> {
+    ) -> CoapRequest<Endpoint, T> {
         CoapRequest {
             response: CoapResponse::new(&packet),
             message: packet,
@@ -37,12 +37,12 @@ impl<Endpoint> CoapRequest<Endpoint> {
 
     /// Sets the method.
     pub fn set_method(&mut self, method: Method) {
-        self.message.header.code = MessageClass::Request(method);
+        self.message.set_code_from_message_class(MessageClass::Request(method));
     }
 
     /// Returns the method.
     pub fn get_method(&self) -> &Method {
-        match self.message.header.code {
+        match self.message.get_message_class() {
             MessageClass::Request(Method::Get) => &Method::Get,
             MessageClass::Request(Method::Post) => &Method::Post,
             MessageClass::Request(Method::Put) => &Method::Put,
@@ -100,7 +100,7 @@ impl<Endpoint> CoapRequest<Endpoint> {
     }
 }
 
-impl<Endpoint> Default for CoapRequest<Endpoint> {
+impl<Endpoint, T:Packet> Default for CoapRequest<Endpoint, T> {
     fn default() -> Self {
         CoapRequest {
             response: None,
@@ -112,14 +112,16 @@ impl<Endpoint> Default for CoapRequest<Endpoint> {
 
 #[cfg(test)]
 mod test {
+    use crate::packet::PacketUdp;
+
     use super::{super::header::MessageType, *};
 
     struct Endpoint(String);
 
     #[test]
     fn test_request_create() {
-        let mut packet = Packet::new();
-        let mut request1: CoapRequest<Endpoint> = CoapRequest::new();
+        let mut packet = PacketUdp::new();
+        let mut request1: CoapRequest<Endpoint, PacketUdp> = CoapRequest::new();
 
         packet.set_token(vec![0x17, 0x38]);
         request1.message.set_token(vec![0x17, 0x38]);
@@ -129,17 +131,14 @@ mod test {
             .message
             .add_option(CoapOption::UriPath, b"test-interface".to_vec());
 
-        packet.header.message_id = 42;
-        request1.message.header.message_id = 42;
+        packet.set_message_id(42);
+        request1.message.set_message_id(42);
 
-        packet.header.set_version(2);
-        request1.message.header.set_version(2);
+        packet.set_type(MessageType::Confirmable);
+        request1.message.set_type(MessageType::Confirmable);
 
-        packet.header.set_type(MessageType::Confirmable);
-        request1.message.header.set_type(MessageType::Confirmable);
-
-        packet.header.set_code("0.04");
-        request1.message.header.set_code("0.04");
+        packet.set_code("0.04");
+        request1.message.set_code("0.04");
 
         let endpoint = Endpoint(String::from("127.0.0.1:1234"));
         let request2 = CoapRequest::from_packet(packet, endpoint);
@@ -152,36 +151,36 @@ mod test {
 
     #[test]
     fn test_method() {
-        let mut request: CoapRequest<Endpoint> = CoapRequest::new();
+        let mut request: CoapRequest<Endpoint, PacketUdp> = CoapRequest::new();
 
-        request.message.header.set_code("0.01");
+        request.message.set_code("0.01");
         assert_eq!(&Method::Get, request.get_method());
 
-        request.message.header.set_code("0.02");
+        request.message.set_code("0.02");
         assert_eq!(&Method::Post, request.get_method());
 
-        request.message.header.set_code("0.03");
+        request.message.set_code("0.03");
         assert_eq!(&Method::Put, request.get_method());
 
-        request.message.header.set_code("0.04");
+        request.message.set_code("0.04");
         assert_eq!(&Method::Delete, request.get_method());
 
         request.set_method(Method::Get);
-        assert_eq!("0.01", request.message.header.get_code());
+        assert_eq!("0.01", request.message.get_code());
 
         request.set_method(Method::Post);
-        assert_eq!("0.02", request.message.header.get_code());
+        assert_eq!("0.02", request.message.get_code());
 
         request.set_method(Method::Put);
-        assert_eq!("0.03", request.message.header.get_code());
+        assert_eq!("0.03", request.message.get_code());
 
         request.set_method(Method::Delete);
-        assert_eq!("0.04", request.message.header.get_code());
+        assert_eq!("0.04", request.message.get_code());
     }
 
     #[test]
     fn test_path() {
-        let mut request: CoapRequest<Endpoint> = CoapRequest::new();
+        let mut request: CoapRequest<Endpoint, PacketUdp> = CoapRequest::new();
 
         let path = "test-interface";
         request

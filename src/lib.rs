@@ -144,7 +144,7 @@ pub use header::{
     Header, HeaderRaw, MessageClass, MessageType, RequestType, ResponseType,
 };
 pub use observe::Subject;
-pub use packet::{CoapOption, ContentFormat, ObserveOption, Packet};
+pub use packet::{CoapOption, ContentFormat, ObserveOption, Packet, PacketUdp};
 pub use packet_tcp::PacketTcp;
 pub use request::CoapRequest;
 pub use response::CoapResponse;
