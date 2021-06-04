@@ -133,6 +133,7 @@ mod header;
 pub mod link_format;
 mod observe;
 mod packet;
+mod packet_tcp;
 mod request;
 mod response;
 
@@ -144,5 +145,6 @@ pub use header::{
 };
 pub use observe::Subject;
 pub use packet::{CoapOption, ContentFormat, ObserveOption, Packet};
+pub use packet_tcp::PacketTcp;
 pub use request::CoapRequest;
 pub use response::CoapResponse;

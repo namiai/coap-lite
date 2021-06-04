@@ -329,95 +329,7 @@ impl Packet {
                 let token = buf[4..options_start].to_vec();
 
                 let mut idx = options_start;
-                let mut options_number = 0;
-                let mut options: BTreeMap<u16, LinkedList<Vec<u8>>> =
-                    BTreeMap::new();
-                while idx < buf.len() {
-                    let byte = buf[idx];
-
-                    if byte == 255 || idx > buf.len() {
-                        break;
-                    }
-
-                    let mut delta = (byte >> 4) as u16;
-                    let mut length = (byte & 0xF) as usize;
-
-                    idx += 1;
-
-                    // Check for special delta characters
-                    match delta {
-                        13 => {
-                            if idx >= buf.len() {
-                                return Err(MessageError::InvalidOptionLength);
-                            }
-                            delta = (buf[idx] + 13).into();
-                            idx += 1;
-                        }
-                        14 => {
-                            if idx + 1 >= buf.len() {
-                                return Err(MessageError::InvalidOptionLength);
-                            }
-
-                            delta = u16::from_be(u8_to_unsigned_be!(
-                                buf,
-                                idx,
-                                idx + 1,
-                                u16
-                            )) + 269;
-                            idx += 2;
-                        }
-                        15 => {
-                            return Err(MessageError::InvalidOptionDelta);
-                        }
-                        _ => {}
-                    };
-
-                    // Check for special length characters
-                    match length {
-                        13 => {
-                            if idx >= buf.len() {
-                                return Err(MessageError::InvalidOptionLength);
-                            }
-
-                            length = buf[idx] as usize + 13;
-                            idx += 1;
-                        }
-                        14 => {
-                            if idx + 1 >= buf.len() {
-                                return Err(MessageError::InvalidOptionLength);
-                            }
-
-                            length = (u16::from_be(u8_to_unsigned_be!(
-                                buf,
-                                idx,
-                                idx + 1,
-                                u16
-                            )) + 269)
-                                as usize;
-                            idx += 2;
-                        }
-                        15 => {
-                            return Err(MessageError::InvalidOptionLength);
-                        }
-                        _ => {}
-                    };
-
-                    options_number += delta;
-
-                    let end = idx + length;
-                    if end > buf.len() {
-                        return Err(MessageError::InvalidOptionLength);
-                    }
-                    let options_value = buf[idx..end].to_vec();
-
-                    options
-                        .entry(options_number)
-                        .or_insert_with(LinkedList::new)
-                        .push_back(options_value);
-
-                    idx += length;
-                }
-
+                let options = decode_options(&mut idx, &buf)?;
                 let payload = if idx < buf.len() {
                     buf[(idx + 1)..buf.len()].to_vec()
                 } else {
@@ -437,9 +349,138 @@ impl Packet {
 
     /// Returns a vector of bytes representing the Packet.
     pub fn to_bytes(&self) -> Result<Vec<u8>, MessageError> {
+        let mut options_bytes = encode_options(&self.options);
+        let mut buf_length = 4 + self.payload.len() + self.token.len();
+        if self.header.code != MessageClass::Empty && !self.payload.is_empty()
+        {
+            buf_length += 1;
+        }
+        buf_length += options_bytes.len();
+
+        if buf_length > 1280 {
+            return Err(MessageError::InvalidPacketLength);
+        }
+
+        let mut buf: Vec<u8> = Vec::with_capacity(buf_length);
+        let header_result = self.header.to_raw().serialize_into(&mut buf);
+
+        match header_result {
+            Ok(_) => {
+                buf.reserve(self.token.len() + options_bytes.len());
+                buf.extend_from_slice(&self.token);
+                buf.append(&mut options_bytes);
+
+                if self.header.code != MessageClass::Empty
+                    && !self.payload.is_empty()
+                {
+                    buf.push(0xFF);
+                    buf.reserve(self.payload.len());
+                    buf.extend_from_slice(&self.payload);
+                }
+                Ok(buf)
+            }
+            Err(_) => Err(MessageError::InvalidHeader),
+        }
+    }
+
+}
+
+    pub fn decode_options(idx:&mut usize, buf: &[u8]) -> Result<BTreeMap<u16,LinkedList<Vec<u8>>>, MessageError> {
+        let mut options_number = 0;
+        let mut options: BTreeMap<u16, LinkedList<Vec<u8>>> =
+            BTreeMap::new();
+        while *idx < buf.len() {
+            let byte = buf[*idx];
+
+            if byte == 255 || *idx > buf.len() {
+                break;
+            }
+
+            let mut delta = (byte >> 4) as u16;
+            let mut length = (byte & 0xF) as usize;
+
+            *idx += 1;
+
+            // Check for special delta characters
+            match delta {
+                13 => {
+                    if *idx >= buf.len() {
+                        return Err(MessageError::InvalidOptionLength);
+                    }
+                    delta = (buf[*idx] + 13).into();
+                    *idx += 1;
+                }
+                14 => {
+                    if *idx + 1 >= buf.len() {
+                        return Err(MessageError::InvalidOptionLength);
+                    }
+
+                    delta = u16::from_be(u8_to_unsigned_be!(
+                        buf,
+                        *idx,
+                        *idx + 1,
+                        u16
+                    )) + 269;
+                    *idx += 2;
+                }
+                15 => {
+                    return Err(MessageError::InvalidOptionDelta);
+                }
+                _ => {}
+            };
+
+            // Check for special length characters
+            match length {
+                13 => {
+                    if *idx >= buf.len() {
+                        return Err(MessageError::InvalidOptionLength);
+                    }
+
+                    length = buf[*idx] as usize + 13;
+                    *idx += 1;
+                }
+                14 => {
+                    if *idx + 1 >= buf.len() {
+                        return Err(MessageError::InvalidOptionLength);
+                    }
+
+                    length = (u16::from_be(u8_to_unsigned_be!(
+                        buf,
+                        *idx,
+                        *idx + 1,
+                        u16
+                    )) + 269)
+                        as usize;
+                    *idx += 2;
+                }
+                15 => {
+                    return Err(MessageError::InvalidOptionLength);
+                }
+                _ => {}
+            };
+
+            options_number += delta;
+
+            let end = *idx + length;
+            if end > buf.len() {
+                return Err(MessageError::InvalidOptionLength);
+            }
+            let options_value = buf[*idx..end].to_vec();
+
+            options
+                .entry(options_number)
+                .or_insert_with(LinkedList::new)
+                .push_back(options_value);
+
+            *idx += length;
+        }
+        Ok(options)
+    }
+
+    pub fn encode_options(options: &BTreeMap<u16, LinkedList<Vec<u8>>>) -> Vec<u8>{
         let mut options_delta_length = 0;
         let mut options_bytes: Vec<u8> = Vec::new();
-        for (number, value_list) in self.options.iter() {
+        for (number, value_list) in options {
             for value in value_list.iter() {
                 let mut header: Vec<u8> = Vec::with_capacity(1 + 2 + 2);
                 let delta = number - options_delta_length;
@@ -480,82 +521,12 @@ impl Packet {
                 options_delta_length += delta;
 
                 options_bytes.reserve(header.len() + value.len());
-                unsafe {
-                    use core::ptr;
-                    let buf_len = options_bytes.len();
-                    ptr::copy(
-                        header.as_ptr(),
-                        options_bytes.as_mut_ptr().add(buf_len),
-                        header.len(),
-                    );
-                    ptr::copy(
-                        value.as_ptr(),
-                        options_bytes.as_mut_ptr().add(buf_len + header.len()),
-                        value.len(),
-                    );
-                    options_bytes
-                        .set_len(buf_len + header.len() + value.len());
-                }
+                options_bytes.append(&mut header);
+                options_bytes.extend_from_slice(&value);
             }
         }
-
-        let mut buf_length = 4 + self.payload.len() + self.token.len();
-        if self.header.code != MessageClass::Empty && !self.payload.is_empty()
-        {
-            buf_length += 1;
-        }
-        buf_length += options_bytes.len();
-
-        if buf_length > 1280 {
-            return Err(MessageError::InvalidPacketLength);
-        }
-
-        let mut buf: Vec<u8> = Vec::with_capacity(buf_length);
-        let header_result = self.header.to_raw().serialize_into(&mut buf);
-
-        match header_result {
-            Ok(_) => {
-                buf.reserve(self.token.len() + options_bytes.len());
-                unsafe {
-                    use core::ptr;
-                    let buf_len = buf.len();
-                    ptr::copy(
-                        self.token.as_ptr(),
-                        buf.as_mut_ptr().add(buf_len),
-                        self.token.len(),
-                    );
-                    ptr::copy(
-                        options_bytes.as_ptr(),
-                        buf.as_mut_ptr().add(buf_len + self.token.len()),
-                        options_bytes.len(),
-                    );
-                    buf.set_len(
-                        buf_len + self.token.len() + options_bytes.len(),
-                    );
-                }
-
-                if self.header.code != MessageClass::Empty
-                    && !self.payload.is_empty()
-                {
-                    buf.push(0xFF);
-                    buf.reserve(self.payload.len());
-                    unsafe {
-                        use core::ptr;
-                        let buf_len = buf.len();
-                        ptr::copy(
-                            self.payload.as_ptr(),
-                            buf.as_mut_ptr().add(buf.len()),
-                            self.payload.len(),
-                        );
-                        buf.set_len(buf_len + self.payload.len());
-                    }
-                }
-                Ok(buf)
-            }
-            Err(_) => Err(MessageError::InvalidHeader),
-        }
+        options_bytes
     }
-}
 
 #[cfg(test)]
 mod test {
