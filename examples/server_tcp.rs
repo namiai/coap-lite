@@ -38,36 +38,39 @@ fn main() -> std::io::Result<()> {
         thread::spawn(move || {
             loop {
                 let mut tls_session = tls_session.lock().unwrap();
-                let rc = tls_session.read_tls(&mut stream);
-                if rc.is_err() {
-                    let err = rc.unwrap_err();
+                if tls_session.wants_read() {
+                    let rc = tls_session.read_tls(&mut stream);
+                    if rc.is_err() {
+                        let err = rc.unwrap_err();
 
-                    if let io::ErrorKind::WouldBlock = err.kind() {
+                        if let io::ErrorKind::WouldBlock = err.kind() {
+                            break;
+                        }
+
+                        println!("read error {:?}", err);
                         break;
                     }
 
-                    println!("read error {:?}", err);
-                    break;
+                    if rc.unwrap() == 0 {
+                        println!("eof");
+                        break;
+                    }
+
+                    // Process newly-received TLS messages.
+                    let processed = tls_session.process_new_packets();
+                    if processed.is_err() {
+                        println!("cannot process packet: {:?}", processed);
+
+                        break;
+                    }
                 }
+                if tls_session.wants_write() {
+                    handle_incoming_data(&mut *tls_session);
 
-                if rc.unwrap() == 0 {
-                    println!("eof");
-                    break;
-                }
-
-                // Process newly-received TLS messages.
-                let processed = tls_session.process_new_packets();
-                if processed.is_err() {
-                    println!("cannot process packet: {:?}", processed);
-
-                    break;
-                }
-
-                handle_stream(&mut *tls_session);
-
-                if let Err(err) = tls_session.write_tls(&mut stream) {
-                    println!("Error when writing TLS {:?}", err);
-                    return;
+                    if let Err(err) = tls_session.write_tls(&mut stream) {
+                        println!("Error when writing TLS {:?}", err);
+                        return;
+                    }
                 }
                 drop(tls_session);
                 thread::sleep(Duration::from_millis(10));
@@ -88,7 +91,7 @@ fn send_csm(writer: &mut impl Write) {
     writer.write_all(&csm.to_bytes().unwrap()[..]).unwrap();
 }
 
-fn handle_stream(stream: &mut (impl Read + Write)) {
+fn handle_incoming_data(stream: &mut (impl Read + Write)) {
     let mut buf = Vec::new();
     stream.read_to_end(&mut buf).unwrap();
     if buf.len() == 0 {
