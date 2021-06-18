@@ -1,8 +1,8 @@
 use coap_lite::{
-    CoapOption, CoapRequest, CoapResponse, MessageClass,
-    Packet, PacketTcp, RequestType, SignalType,
+    CoapOption, CoapRequest, CoapResponse, MessageClass, Packet, PacketTcp,
+    RequestType, SignalType,
 };
-use std::io::{Read, Write, BufReader};
+use std::io::{BufReader, Read, Write};
 use std::net::TcpListener;
 use std::{collections::LinkedList, sync::Mutex, thread, time::Duration};
 
@@ -100,7 +100,12 @@ fn handle_incoming_data(stream: &mut (impl Read + Write)) {
     println!("Buf len {}, contents {:?}", buf.len(), buf);
 
     if let Ok(parsed_packet) = PacketTcp::from_bytes(&buf[..]) {
-        println!("Parsed packet type {}", parsed_packet.get_code());
+        println!(
+            "Parsed packet type {}, payload: {}",
+            parsed_packet.get_code(),
+            String::from_utf8(parsed_packet.get_payload().to_owned())
+                .unwrap_or_default()
+        );
         match parsed_packet.get_message_class() {
             MessageClass::Signaling(SignalType::Ping) => {
                 send_pong(stream, &parsed_packet)
