@@ -69,6 +69,7 @@ pub enum MessageClass {
     Empty,
     Request(RequestType),
     Response(ResponseType),
+    Signaling(SignalType),
     Reserved,
 }
 
@@ -129,6 +130,12 @@ impl From<MessageClass> for u8 {
             MessageClass::Request(RequestType::Put) => 0x03,
             MessageClass::Request(RequestType::Delete) => 0x04,
 
+            MessageClass::Signaling(SignalType::CSM) => 0xE1,
+            MessageClass::Signaling(SignalType::Ping) => 0xE2,
+            MessageClass::Signaling(SignalType::Pong) => 0xE3,
+            MessageClass::Signaling(SignalType::Release) => 0xE4,
+            MessageClass::Signaling(SignalType::Abort) => 0xE5,
+
             MessageClass::Response(ResponseType::Created) => 0x41,
             MessageClass::Response(ResponseType::Deleted) => 0x42,
             MessageClass::Response(ResponseType::Valid) => 0x43,
@@ -184,6 +191,7 @@ pub enum RequestType {
     Put,
     Delete,
     UnKnown,
+    CSM
 }
 
 /// The response codes.
@@ -231,6 +239,14 @@ pub enum MessageType {
     Reset,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SignalType {
+    CSM,
+    Ping,
+    Pong,
+    Release,
+    Abort
+}
 /// The message header.
 #[derive(Debug, Clone)]
 pub struct Header {

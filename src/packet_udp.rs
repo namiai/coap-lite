@@ -1,7 +1,4 @@
-use alloc::{
-    collections::{BTreeMap, LinkedList},
-    vec::Vec,
-};
+use alloc::{collections::LinkedList, vec::Vec};
 use core::convert::TryFrom;
 
 use super::{
@@ -15,7 +12,7 @@ use super::{
 pub struct PacketUdp {
     header: Header,
     token: Vec<u8>,
-    options: BTreeMap<u16, LinkedList<Vec<u8>>>,
+    options: Options,
     payload: Vec<u8>,
 }
 
@@ -26,7 +23,7 @@ impl Packet for PacketUdp {
     }
 
     /// Returns an iterator over the options of the packet.
-    fn options(&self) -> Options {
+    fn options(&self) -> OptionsIter<'_> {
         self.options.iter()
     }
 
@@ -212,6 +209,22 @@ impl Packet for PacketUdp {
         self.header.set_type(message_type)
     }
 
+    fn set_type_from_request(
+        &mut self,
+        request_message_type: Option<MessageType>,
+    ) -> Result<(), MessageError> {
+        match request_message_type {
+            Some(MessageType::Confirmable) => {
+                self.set_type(MessageType::Acknowledgement)
+            }
+            Some(MessageType::NonConfirmable) => {
+                self.set_type(MessageType::NonConfirmable)
+            }
+            _ => return Err(MessageError::InvalidHeader),
+        };
+        Ok(())
+    }
+
     fn get_type(&self) -> Option<MessageType> {
         Some(self.header.get_type())
     }
@@ -371,36 +384,6 @@ mod test {
     fn test_decode_empty_content_format() {
         let packet = PacketUdp::new();
         assert!(packet.get_content_format().is_none());
-    }
-
-    #[test]
-    fn option() {
-        for i in 0..512 {
-            match CoapOption::try_from(i) {
-                Ok(o) => assert_eq!(i, o.into()),
-                _ => (),
-            }
-        }
-    }
-
-    #[test]
-    fn content_format() {
-        for i in 0..512 {
-            match ContentFormat::try_from(i) {
-                Ok(o) => assert_eq!(i, o.into()),
-                _ => (),
-            }
-        }
-    }
-
-    #[test]
-    fn observe_option() {
-        for i in 0..8 {
-            match ObserveOption::try_from(i) {
-                Ok(o) => assert_eq!(i, o.into()),
-                _ => (),
-            }
-        }
     }
 
     #[test]

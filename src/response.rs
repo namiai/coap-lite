@@ -1,5 +1,5 @@
 use super::{
-    header::{MessageClass, MessageType, ResponseType as Status},
+    header::{MessageClass, ResponseType as Status},
     packet::{ObserveOption, Packet},
 };
 
@@ -14,12 +14,9 @@ impl<T: Packet> CoapResponse<T> {
     pub fn new(request: &T) -> Option<CoapResponse<T>> {
         let mut packet = T::new();
 
-        let response_type = match request.get_type() {
-            Some(MessageType::Confirmable) => MessageType::Acknowledgement,
-            Some(MessageType::NonConfirmable) => MessageType::NonConfirmable,
-            _ => return None,
-        };
-        packet.set_type(response_type);
+        if let Err(_) = packet.set_type_from_request(request.get_type()) {
+            return None;
+        }
         packet.set_code_from_message_class(MessageClass::Response(
             Status::Content,
         ));
@@ -101,8 +98,10 @@ impl<T: Packet> CoapResponse<T> {
 
 #[cfg(test)]
 mod test {
+    use super::super::header::MessageType;
     use super::*;
     use crate::PacketUdp;
+
     #[test]
     fn test_new_response_valid() {
         for mtyp in vec![MessageType::Confirmable, MessageType::NonConfirmable]

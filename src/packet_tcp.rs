@@ -1,7 +1,4 @@
-use alloc::{
-    collections::{BTreeMap, LinkedList},
-    vec::Vec,
-};
+use alloc::{collections::LinkedList, vec::Vec};
 use core::convert::TryFrom;
 use core::convert::TryInto;
 
@@ -10,7 +7,10 @@ use crate::Packet;
 use super::{
     error::MessageError,
     header::{MessageClass, MessageType},
-    packet::{decode_options, encode_options, CoapOption, ContentFormat},
+    packet::{
+        decode_options, encode_options, CoapOption, ContentFormat, Options,
+        OptionsIter,
+    },
 };
 
 macro_rules! u8_to_unsigned_be {
@@ -32,13 +32,9 @@ impl Default for MessageClass {
 pub struct PacketTcp {
     code: MessageClass,
     token: Vec<u8>,
-    options: BTreeMap<u16, LinkedList<Vec<u8>>>,
+    options: Options,
     payload: Vec<u8>,
 }
-
-/// An iterator over the options of a packet.
-pub type Options<'a> =
-    alloc::collections::btree_map::Iter<'a, u16, LinkedList<Vec<u8>>>;
 
 impl Packet for PacketTcp {
     /// Creates a new packet.
@@ -47,7 +43,7 @@ impl Packet for PacketTcp {
     }
 
     /// Returns an iterator over the options of the packet.
-    fn options(&self) -> Options {
+    fn options(&self) -> OptionsIter<'_> {
         self.options.iter()
     }
 
@@ -151,8 +147,7 @@ impl Packet for PacketTcp {
         if token_length > 8 {
             return Err(MessageError::InvalidTokenLength);
         }
-
-        if idx >= buf.len() {
+        if idx >= buf.len() && token_length > 0 {
             return Err(MessageError::InvalidTokenLength);
         }
 
@@ -261,7 +256,14 @@ impl Packet for PacketTcp {
     }
 
     fn set_type(&mut self, _message_type: MessageType) {
-        return
+        return;
+    }
+
+    fn set_type_from_request(
+        &mut self,
+        _request_message_type: Option<MessageType>,
+    ) -> Result<(), MessageError> {
+        Ok(())
     }
 
     fn get_type(&self) -> Option<MessageType> {
@@ -269,7 +271,7 @@ impl Packet for PacketTcp {
     }
 
     fn set_message_id(&mut self, _message_id: u16) {
-        return
+        return;
     }
 
     fn get_message_id(&self) -> Option<u16> {
@@ -286,7 +288,7 @@ impl Packet for PacketTcp {
 }
 
 impl PacketTcp {
-    fn parse_length(
+    pub fn parse_length(
         idx: &mut usize,
         buf: &[u8],
     ) -> Result<(usize, usize), MessageError> {
@@ -649,37 +651,6 @@ mod test {
     fn test_decode_empty_content_format() {
         let packet = PacketTcp::new();
         assert!(packet.get_content_format().is_none());
-    }
-
-    #[test]
-    fn option() {
-        for i in 0..512 {
-            match CoapOption::try_from(i) {
-                Ok(o) => assert_eq!(i, o.into()),
-                _ => (),
-            }
-        }
-    }
-
-    #[test]
-    fn content_format() {
-        for i in 0..512 {
-            match ContentFormat::try_from(i) {
-                Ok(o) => assert_eq!(i, o.into()),
-                _ => (),
-            }
-        }
-    }
-
-    use super::super::packet::ObserveOption;
-    #[test]
-    fn observe_option() {
-        for i in 0..8 {
-            match ObserveOption::try_from(i) {
-                Ok(o) => assert_eq!(i, o.into()),
-                _ => (),
-            }
-        }
     }
 
     #[test]

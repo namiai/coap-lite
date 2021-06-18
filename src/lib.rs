@@ -141,8 +141,10 @@ mod response;
 #[cfg(feature = "with-coap-message")]
 mod impl_coap_message;
 
+use std::{io::BufReader, net::TcpStream, io::Read};
+
 pub use header::{
-    Header, HeaderRaw, MessageClass, MessageType, RequestType, ResponseType,
+    Header, HeaderRaw, MessageClass, MessageType, RequestType, ResponseType, SignalType
 };
 pub use observe::Subject;
 pub use packet::{CoapOption, ContentFormat, ObserveOption, Packet};

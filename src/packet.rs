@@ -3,6 +3,7 @@ use alloc::{
     vec::Vec,
 };
 use core::convert::TryFrom;
+use std::fmt::{Display, Error, Formatter};
 
 use super::{
     error::{InvalidContentFormat, InvalidObserve, MessageError},
@@ -18,7 +19,7 @@ macro_rules! u8_to_unsigned_be {
 }
 
 /// The CoAP options.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CoapOption {
     IfMatch,
     UriHost,
@@ -41,13 +42,45 @@ pub enum CoapOption {
     Size1,
     Size2,
     NoResponse,
+    MaxMessageSize,
     Unknown(u16),
+}
+
+impl Display for CoapOption {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        match self {
+            CoapOption::IfMatch => write!(f, "If-Match"),
+            CoapOption::UriHost => write!(f, "Uri-Host"),
+            CoapOption::ETag => write!(f, "ETag"),
+            CoapOption::IfNoneMatch => write!(f, "If-None-Match"),
+            CoapOption::Observe => write!(f, "Observe"),
+            CoapOption::UriPort => write!(f, "Uri-Port"),
+            CoapOption::LocationPath => write!(f, "Location-Path"),
+            CoapOption::Oscore => write!(f, "OSCORE"),
+            CoapOption::UriPath => write!(f, "Uri-Path"),
+            CoapOption::ContentFormat => write!(f, "Content-Format"),
+            CoapOption::MaxAge => write!(f, "Max-Age"),
+            CoapOption::UriQuery => write!(f, "Uri-Query"),
+            CoapOption::Accept => write!(f, "Accept"),
+            CoapOption::LocationQuery => write!(f, "Location-Query"),
+            CoapOption::Block1 => write!(f, "Block1"),
+            CoapOption::Block2 => write!(f, "Block2"),
+            CoapOption::ProxyUri => write!(f, "Proxy-Uri"),
+            CoapOption::ProxyScheme => write!(f, "Proxy-Scheme"),
+            CoapOption::Size1 => write!(f, "Size1"),
+            CoapOption::Size2 => write!(f, "Size2"),
+            CoapOption::NoResponse => write!(f, "No-Response"),
+            CoapOption::MaxMessageSize => write!(f, "Max-Message-Size"),
+            CoapOption::Unknown(c) => write!(f, "Unknown - {}", c),
+        }
+    }
 }
 
 impl From<u16> for CoapOption {
     fn from(number: u16) -> CoapOption {
         match number {
             1 => CoapOption::IfMatch,
+            2 => CoapOption::MaxMessageSize,
             3 => CoapOption::UriHost,
             4 => CoapOption::ETag,
             5 => CoapOption::IfNoneMatch,
@@ -73,10 +106,11 @@ impl From<u16> for CoapOption {
     }
 }
 
-impl From<CoapOption> for u16 {
-    fn from(option: CoapOption) -> u16 {
+impl From<&CoapOption> for u16 {
+    fn from(option: &CoapOption) -> u16 {
         match option {
             CoapOption::IfMatch => 1,
+            CoapOption::MaxMessageSize => 2,
             CoapOption::UriHost => 3,
             CoapOption::ETag => 4,
             CoapOption::IfNoneMatch => 5,
@@ -97,7 +131,7 @@ impl From<CoapOption> for u16 {
             CoapOption::Size1 => 60,
             CoapOption::Size2 => 28,
             CoapOption::NoResponse => 258,
-            CoapOption::Unknown(number) => number,
+            CoapOption::Unknown(number) => *number,
         }
     }
 }
@@ -137,6 +171,7 @@ impl TryFrom<usize> for ContentFormat {
             110 => Ok(ContentFormat::ApplicationSenmlJSON),
             111 => Ok(ContentFormat::ApplicationSensmlJSON),
             112 => Ok(ContentFormat::ApplicationSenmlCBOR),
+
             113 => Ok(ContentFormat::ApplicationSensmlCBOR),
             114 => Ok(ContentFormat::ApplicationSenmlExi),
             115 => Ok(ContentFormat::ApplicationSensmlExi),
@@ -198,12 +233,15 @@ impl From<ObserveOption> for usize {
 }
 
 /// An iterator over the options of a packet.
-pub type Options<'a> =
-    alloc::collections::btree_map::Iter<'a, u16, LinkedList<Vec<u8>>>;
+pub type Options =
+    alloc::collections::btree_map::BTreeMap<CoapOption, LinkedList<Vec<u8>>>;
+
+pub type OptionsIter<'a> =
+    alloc::collections::btree_map::Iter<'a, CoapOption, LinkedList<Vec<u8>>>;
 
 pub trait Packet: Sized {
     fn new() -> Self;
-    fn options(&self) -> Options;
+    fn options(&self) -> OptionsIter<'_>;
     fn set_token(&mut self, token: Vec<u8>);
     fn get_token(&self) -> &Vec<u8>;
     fn set_option(&mut self, tp: CoapOption, value: LinkedList<Vec<u8>>);
@@ -221,6 +259,10 @@ pub trait Packet: Sized {
     fn set_code_from_message_class(&mut self, message_class: MessageClass);
     fn get_message_class(&self) -> MessageClass;
     fn set_type(&mut self, message_type: MessageType);
+    fn set_type_from_request(
+        &mut self,
+        request_message_type: Option<MessageType>,
+    ) -> Result<(), MessageError>;
     fn get_type(&self) -> Option<MessageType>;
     fn set_message_id(&mut self, message_id: u16);
     fn get_message_id(&self) -> Option<u16>;
@@ -231,9 +273,10 @@ pub trait Packet: Sized {
 pub fn decode_options(
     idx: &mut usize,
     buf: &[u8],
-) -> Result<BTreeMap<u16, LinkedList<Vec<u8>>>, MessageError> {
+) -> Result<Options, MessageError> {
     let mut options_number = 0;
-    let mut options: BTreeMap<u16, LinkedList<Vec<u8>>> = BTreeMap::new();
+    let mut options: BTreeMap<CoapOption, LinkedList<Vec<u8>>> =
+        BTreeMap::new();
     while *idx < buf.len() {
         let byte = buf[*idx];
 
@@ -309,7 +352,7 @@ pub fn decode_options(
         let options_value = buf[*idx..end].to_vec();
 
         options
-            .entry(options_number)
+            .entry(CoapOption::from(options_number))
             .or_insert_with(LinkedList::new)
             .push_back(options_value);
 
@@ -318,15 +361,13 @@ pub fn decode_options(
     Ok(options)
 }
 
-pub fn encode_options(
-    options: &BTreeMap<u16, LinkedList<Vec<u8>>>,
-) -> Vec<u8> {
+pub fn encode_options(options: &Options) -> Vec<u8> {
     let mut options_delta_length = 0;
     let mut options_bytes: Vec<u8> = Vec::new();
     for (number, value_list) in options {
         for value in value_list.iter() {
             let mut header: Vec<u8> = Vec::with_capacity(1 + 2 + 2);
-            let delta = number - options_delta_length;
+            let delta = u16::from(number) - options_delta_length;
 
             let mut byte: u8 = 0;
             if delta <= 12 {
@@ -369,4 +410,40 @@ pub fn encode_options(
         }
     }
     options_bytes
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn option() {
+        for i in 0..512 {
+            match CoapOption::try_from(i) {
+                Ok(o) => assert_eq!(i, (&o).into()),
+                _ => (),
+            }
+        }
+    }
+
+    #[test]
+    fn content_format() {
+        for i in 0..512 {
+            match ContentFormat::try_from(i) {
+                Ok(o) => assert_eq!(i, o.into()),
+                _ => (),
+            }
+        }
+    }
+
+    use super::super::packet::ObserveOption;
+    #[test]
+    fn observe_option() {
+        for i in 0..8 {
+            match ObserveOption::try_from(i) {
+                Ok(o) => assert_eq!(i, o.into()),
+                _ => (),
+            }
+        }
+    }
 }
