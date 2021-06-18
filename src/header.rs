@@ -94,6 +94,7 @@ impl From<u8> for MessageClass {
             0x81 => MessageClass::Response(ResponseType::Unauthorized),
             0x82 => MessageClass::Response(ResponseType::BadOption),
             0x83 => MessageClass::Response(ResponseType::Forbidden),
+
             0x84 => MessageClass::Response(ResponseType::NotFound),
             0x85 => MessageClass::Response(ResponseType::MethodNotAllowed),
             0x86 => MessageClass::Response(ResponseType::NotAcceptable),
@@ -115,6 +116,11 @@ impl From<u8> for MessageClass {
             0x93 => MessageClass::Response(ResponseType::ServiceUnavailable),
             0x94 => MessageClass::Response(ResponseType::GatewayTimeout),
             0x95 => MessageClass::Response(ResponseType::ProxyingNotSupported),
+            0xE1 => MessageClass::Signaling(SignalType::CSM),
+            0xE2 => MessageClass::Signaling(SignalType::Ping),
+            0xE3 => MessageClass::Signaling(SignalType::Pong),
+            0xE4 => MessageClass::Signaling(SignalType::Release),
+            0xE5 => MessageClass::Signaling(SignalType::Abort),
             _ => MessageClass::Reserved,
         }
     }
@@ -191,7 +197,7 @@ pub enum RequestType {
     Put,
     Delete,
     UnKnown,
-    CSM
+    CSM,
 }
 
 /// The response codes.
@@ -245,7 +251,7 @@ pub enum SignalType {
     Ping,
     Pong,
     Release,
-    Abort
+    Abort,
 }
 /// The message header.
 #[derive(Debug, Clone)]
