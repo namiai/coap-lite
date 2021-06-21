@@ -8,7 +8,7 @@ use rand::prelude::*;
 use serde_json::json;
 
 fn main() {
-    let socket = UdpSocket::bind("127.0.0.1:5683").unwrap();
+    let socket = UdpSocket::bind("0.0.0.0:5683").unwrap();
     loop {
         let mut buf = [0; 100];
         let (size, src) =
