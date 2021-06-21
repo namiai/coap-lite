@@ -99,6 +99,15 @@ impl<Endpoint, T: Packet> CoapRequest<Endpoint, T> {
                 None => Some(ObserveOption::Register),
             })
     }
+
+    // Sets the Observe flag.
+    pub fn set_observe_flag(&mut self, value: ObserveOption) {
+        let value = match value {
+            ObserveOption::Register => alloc::vec![], // Value is not present if Register
+            ObserveOption::Deregister => alloc::vec![value as u8],
+        };
+        self.message.set_observe(value);
+    }
 }
 
 impl<Endpoint, T: Packet> Default for CoapRequest<Endpoint, T> {
