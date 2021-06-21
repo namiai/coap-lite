@@ -100,12 +100,30 @@ fn handle_incoming_data(stream: &mut (impl Read + Write)) {
     println!("Buf len {}, contents {:?}", buf.len(), buf);
 
     if let Ok(parsed_packet) = PacketTcp::from_bytes(&buf[..]) {
-        println!(
-            "Parsed packet type {}, payload: {}",
-            parsed_packet.get_code(),
-            String::from_utf8(parsed_packet.get_payload().to_owned())
-                .unwrap_or_default()
-        );
+        println!("Parsed packet type {}", parsed_packet.get_code());
+        let payload = parsed_packet.get_payload();
+        if payload.len() > 0 {
+            println!(
+                "Payload: {}",
+                String::from_utf8(payload.to_owned())
+                    .unwrap_or("Error decoding the payload".to_owned())
+            )
+        }
+        let options = parsed_packet.options();
+        if options.len() > 0 {
+            println!("Options:");
+            for option in options {
+                let option_value = option
+                    .1
+                    .iter()
+                    .map(|opt| {
+                        String::from_utf8(opt.to_owned()).unwrap_or_default()
+                    })
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                println!("   {}: {}, raw: {:x?}", option.0, option_value, option.1);
+            }
+        }
         match parsed_packet.get_message_class() {
             MessageClass::Signaling(SignalType::Ping) => {
                 send_pong(stream, &parsed_packet)
