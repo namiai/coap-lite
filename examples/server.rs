@@ -1,11 +1,11 @@
 use coap_lite::{CoapRequest, ObserveOption, Packet, PacketUdp};
+use rand::prelude::*;
+use serde_json::json;
 use std::{
     net::{SocketAddr, UdpSocket},
     thread,
     time::Duration,
 };
-use rand::prelude::*;
-use serde_json::json;
 
 fn main() {
     let socket = UdpSocket::bind("0.0.0.0:5683").unwrap();
@@ -49,6 +49,7 @@ fn main() {
 
         let mut response = request.response.unwrap();
         response.message.set_payload(payload);
+        response.set_observe_flag(ObserveOption::Register);
         let packet = response.message.to_bytes().unwrap();
         socket
             .send_to(&packet[..], &src)
@@ -66,7 +67,8 @@ fn generate_motion_stat() -> String {
             "motion_detected": motion_stat < 20,
             "rssi": rng.gen_range(-95..-45)
         }
-    }).to_string()
+    })
+    .to_string()
 }
 
 fn register_address_for_observe(
@@ -95,6 +97,7 @@ fn register_address_for_observe(
 }
 
 fn generate_observe_value() -> Vec<u8> {
-    let timestamp_bytes = chrono::Local::now().timestamp_millis().to_be_bytes();
-    timestamp_bytes[timestamp_bytes.len()-3..].to_vec()
+    let timestamp_bytes =
+        chrono::Local::now().timestamp_millis().to_be_bytes();
+    timestamp_bytes[timestamp_bytes.len() - 3..].to_vec()
 }
