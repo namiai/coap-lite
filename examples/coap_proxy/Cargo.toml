@@ -1,0 +1,11 @@
+[package]
+name = "coap_proxy"
+version = "0.0.1"
+authors = [ "Gleb Vodovozov <vodovozovge@gmail.com>" ]
+edition = "2018"
+
+[dependencies]
+coap-lite = { path = "../../" }
+tokio = { version = "1.0", features = [ "full" ] }
+tokio-rustls = "0.22"
+argh = "*"
