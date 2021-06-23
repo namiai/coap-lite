@@ -16,7 +16,7 @@ fn main() {
         .set_type(coap_lite::MessageType::NonConfirmable);
     request.set_observe_flag(ObserveOption::Register);
 
-    let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+    let socket = UdpSocket::bind("0.0.0.0:0").unwrap();
 
     let packet = request.message.to_bytes().unwrap();
     socket
@@ -31,7 +31,7 @@ fn main() {
         println!("Payload {:x?}", &buf[..size]);
 
         let packet = PacketUdp::from_bytes(&buf[..size]).unwrap();
-        let request: CoapRequest<SocketAddr, PacketUdp>=
+        let request: CoapRequest<SocketAddr, PacketUdp> =
             CoapRequest::from_packet(packet, src);
 
         let response = request.response.unwrap();

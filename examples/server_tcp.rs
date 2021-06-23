@@ -121,7 +121,10 @@ fn handle_incoming_data(stream: &mut (impl Read + Write)) {
                     })
                     .collect::<Vec<String>>()
                     .join(", ");
-                println!("   {}: {}, raw: {:x?}", option.0, option_value, option.1);
+                println!(
+                    "   {}: {}, raw: {:x?}",
+                    option.0, option_value, option.1
+                );
             }
         }
         match parsed_packet.get_message_class() {
