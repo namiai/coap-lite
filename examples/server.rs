@@ -1,11 +1,7 @@
 use coap_lite::{CoapRequest, ObserveOption, Packet, PacketUdp};
 use rand::prelude::*;
 use serde_json::json;
-use std::{
-    net::{SocketAddr, UdpSocket},
-    thread,
-    time::Duration,
-};
+use std::{collections::LinkedList, net::{SocketAddr, UdpSocket}, thread, time::Duration};
 
 fn main() {
     let socket = UdpSocket::bind("0.0.0.0:5683").unwrap();
@@ -64,7 +60,7 @@ fn generate_motion_stat() -> String {
     json!({
         "a8bb5001020a": {
             "statistics":motion_stat,
-            "motion_detected": motion_stat < 20,
+            "motion_detected": motion_stat > 70,
             "rssi": rng.gen_range(-95..-45)
         }
     })
@@ -85,6 +81,9 @@ fn register_address_for_observe(
         response
             .message
             .set_payload(generate_motion_stat().as_bytes().into());
+        let mut etag_option:LinkedList<Vec<u8>> = LinkedList::new();
+        etag_option.push_front(chrono::Utc::now().timestamp().to_be_bytes().to_vec());
+        response.message.set_option(coap_lite::CoapOption::ETag, etag_option);
         let packet = response.message.to_bytes().unwrap();
         if let Err(_) = socket.send_to(&packet[..], src) {
             break;
