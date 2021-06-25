@@ -17,6 +17,9 @@ use tokio_rustls::rustls::{
 };
 use tokio_rustls::TlsAcceptor;
 
+#[macro_use]
+extern crate log;
+
 #[derive(FromArgs)]
 /// CoAP server with TCP, TLS and Async
 struct Options {
@@ -35,6 +38,8 @@ struct Options {
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+    env_logger::init();
+
     let options: Options = argh::from_env();
 
     let addr = options
@@ -53,6 +58,7 @@ async fn main() -> std::io::Result<()> {
 
     let listener = TcpListener::bind(&addr).await?;
 
+    info!("Proxy started");
     loop {
         let (stream, _) = listener.accept().await?;
         let acceptor = acceptor.clone();
@@ -65,7 +71,7 @@ async fn main() -> std::io::Result<()> {
         };
         tokio::spawn(async move {
             if let Err(err) = fut.await {
-                eprintln!("{:?}", err);
+                error!("{:?}", err);
             }
         });
     }
@@ -95,13 +101,13 @@ async fn handle_incoming_stream(
         if buf.len() == 0 {
             continue;
         }
-        println!("Buf len {}, contents {:?}", buf.len(), buf);
+        trace!("Buf len {}, contents {:?}", buf.len(), buf);
 
         if let Ok(parsed_packet) = PacketTcp::from_bytes(&buf[..]) {
-            println!("Parsed packet type {}", parsed_packet.get_code());
+            debug!("Incoming packet with type {}", parsed_packet.get_code());
             let payload = parsed_packet.get_payload();
             if payload.len() > 0 {
-                println!(
+                debug!(
                     "Payload: {}",
                     String::from_utf8(payload.to_owned())
                         .unwrap_or("Error decoding the payload".to_owned())
@@ -109,7 +115,7 @@ async fn handle_incoming_stream(
             }
             let options = parsed_packet.options();
             if options.len() > 0 {
-                println!("Options:");
+                debug!("Options:");
                 for option in options {
                     let option_value = option
                         .1
@@ -120,7 +126,7 @@ async fn handle_incoming_stream(
                         })
                         .collect::<Vec<String>>()
                         .join(", ");
-                    println!(
+                    debug!(
                         "   {}: {}, raw: {:x?}",
                         option.0, option_value, option.1
                     );
@@ -140,7 +146,7 @@ async fn send_pong(
     stream: &mut (impl AsyncWrite + Unpin),
     packet: &PacketTcp,
 ) -> io::Result<()> {
-    println!("Sending Pong");
+    trace!("Sending Pong");
     let mut reply = CoapResponse::new(packet).unwrap();
     reply
         .message
