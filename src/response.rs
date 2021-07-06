@@ -1,6 +1,6 @@
-use super::{
-    header::{MessageClass, ResponseType as Status},
+use crate::{
     packet::{ObserveOption, Packet},
+    MessageClass, ResponseType as Status,
 };
 
 /// The CoAP response.
@@ -98,7 +98,7 @@ impl<T: Packet> CoapResponse<T> {
 
 #[cfg(test)]
 mod test {
-    use super::super::header::MessageType;
+    use crate::MessageType;
     use super::*;
     use crate::PacketUdp;
 

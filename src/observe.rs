@@ -161,15 +161,14 @@ impl<Endpoint: Display + PartialEq + Clone> Default for Subject<Endpoint> {
 
 #[cfg(test)]
 mod test {
+    use super::*;
     use crate::PacketUdp;
-
-    use super::{
-        super::{
-            header::{MessageType, RequestType as Method},
-            packet::ObserveOption,
-        },
-        *,
-    };
+    use crate::{
+        MessageType, RequestType as Method,
+        packet::ObserveOption,
+        CoapRequest,
+        Subject
+        };
 
     type Endpoint = String;
 

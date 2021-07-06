@@ -5,9 +5,9 @@ use alloc::{
 use core::convert::TryFrom;
 use std::fmt::{Display, Error, Formatter};
 
-use super::{
+use crate::{
     error::{InvalidContentFormat, InvalidObserve, MessageError},
-    header::{MessageClass, MessageType},
+    MessageClass, MessageType,
 };
 
 macro_rules! u8_to_unsigned_be {

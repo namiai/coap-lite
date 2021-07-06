@@ -1,5 +1,5 @@
 use coap_lite::{
-    CoapRequest, CoapResponse, ObserveOption, Packet, PacketUdp,
+    CoapRequest, ObserveOption, Packet, PacketUdp,
     RequestType as Method,
 };
 use std::net::{SocketAddr, UdpSocket};

@@ -3,10 +3,9 @@ use coap_lite::{
     parse_from_stream, CoapRequest, ObserveOption, Packet, PacketTcp,
     RequestType as Method,
 };
-use std::io::{prelude::*, BufReader};
+use std::io::BufReader;
 use std::net::{SocketAddr, TcpStream};
 
-use std::convert::TryInto;
 use std::io::{stdout, Read, Write};
 use std::sync::Arc;
 

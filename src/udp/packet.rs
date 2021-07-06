@@ -1,11 +1,9 @@
 use alloc::{collections::LinkedList, vec::Vec};
 use core::convert::TryFrom;
 
-use super::{
-    error::MessageError,
-    header::{Header, HeaderRaw, MessageClass, MessageType},
-    packet::*,
-};
+use crate::{error::MessageError, packet::*, MessageClass, MessageType};
+
+use super::header::{Header, HeaderRaw};
 
 /// The CoAP packet.
 #[derive(Debug, Clone, Default)]
@@ -248,7 +246,8 @@ impl Packet for PacketUdp {
 
 #[cfg(test)]
 mod test {
-    use super::{super::header, *};
+    use super::*;
+    use crate::{RequestType, ResponseType};
 
     #[test]
     fn test_decode_packet_with_options() {
@@ -260,11 +259,11 @@ mod test {
         assert!(packet.is_ok());
         let packet = packet.unwrap();
         assert_eq!(packet.header.get_version(), 1);
-        assert_eq!(packet.header.get_type(), header::MessageType::Confirmable);
+        assert_eq!(packet.header.get_type(), MessageType::Confirmable);
         assert_eq!(packet.header.get_token_length(), 4);
         assert_eq!(
             packet.header.code,
-            header::MessageClass::Request(header::RequestType::Get)
+            MessageClass::Request(RequestType::Get)
         );
         assert_eq!(packet.header.message_id, 33950);
         assert_eq!(*packet.get_token(), vec![0x51, 0x55, 0x77, 0xE8]);
@@ -298,12 +297,12 @@ mod test {
         assert_eq!(packet.header.get_version(), 1);
         assert_eq!(
             packet.header.get_type(),
-            header::MessageType::Acknowledgement
+            MessageType::Acknowledgement
         );
         assert_eq!(packet.header.get_token_length(), 4);
         assert_eq!(
             packet.header.code,
-            header::MessageClass::Response(header::ResponseType::Content)
+            MessageClass::Response(ResponseType::Content)
         );
         assert_eq!(packet.header.message_id, 5117);
         assert_eq!(*packet.get_token(), vec![0xD0, 0xE2, 0x4D, 0xAC]);
@@ -314,9 +313,9 @@ mod test {
     fn test_encode_packet_with_options() {
         let mut packet = PacketUdp::new();
         packet.header.set_version(1);
-        packet.header.set_type(header::MessageType::Confirmable);
+        packet.header.set_type(MessageType::Confirmable);
         packet.header.code =
-            header::MessageClass::Request(header::RequestType::Get);
+            MessageClass::Request(RequestType::Get);
         packet.header.message_id = 33950;
         packet.set_token(vec![0x51, 0x55, 0x77, 0xE8]);
         packet.add_option(CoapOption::UriPath, b"Hi".to_vec());
@@ -335,9 +334,9 @@ mod test {
     fn test_encode_packet_with_payload() {
         let mut packet = PacketUdp::new();
         packet.header.set_version(1);
-        packet.header.set_type(header::MessageType::Acknowledgement);
+        packet.header.set_type(MessageType::Acknowledgement);
         packet.header.code =
-            header::MessageClass::Response(header::ResponseType::Content);
+            MessageClass::Response(ResponseType::Content);
         packet.header.message_id = 5117;
         packet.set_token(vec![0xD0, 0xE2, 0x4D, 0xAC]);
         packet.payload = "Hello".as_bytes().to_vec();

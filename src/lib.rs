@@ -129,14 +129,18 @@ extern crate alloc;
 #[cfg_attr(tarpaulin, skip)]
 pub mod error;
 
-mod header;
 pub mod link_format;
+mod message_class;
+mod message_type;
 mod observe;
 mod packet;
-mod packet_tcp;
-mod packet_udp;
 mod request;
+mod request_type;
 mod response;
+mod response_type;
+mod signal_type;
+mod tcp;
+mod udp;
 
 #[cfg(feature = "with-coap-message")]
 mod impl_coap_message;
@@ -144,16 +148,18 @@ mod impl_coap_message;
 use std::io::Read;
 
 pub use error::MessageError;
-pub use header::{
-    Header, HeaderRaw, MessageClass, MessageType, RequestType, ResponseType,
-    SignalType,
-};
+pub use message_class::MessageClass;
+pub use message_type::MessageType;
 pub use observe::Subject;
 pub use packet::{CoapOption, ContentFormat, ObserveOption, Packet};
-pub use packet_tcp::PacketTcp;
-pub use packet_udp::PacketUdp;
 pub use request::CoapRequest;
+pub use request_type::RequestType;
 pub use response::CoapResponse;
+pub use response_type::ResponseType;
+pub use signal_type::SignalType;
+pub use tcp::packet::PacketTcp;
+pub use udp::header::{Header, HeaderRaw};
+pub use udp::packet::PacketUdp;
 
 pub fn parse_from_stream(
     reader: &mut dyn Read,

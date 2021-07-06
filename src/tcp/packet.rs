@@ -4,13 +4,13 @@ use core::convert::TryInto;
 
 use crate::Packet;
 
-use super::{
+use crate::{
     error::MessageError,
-    header::{MessageClass, MessageType},
     packet::{
         decode_options, encode_options, CoapOption, ContentFormat, Options,
         OptionsIter,
     },
+    MessageClass, MessageType,
 };
 
 macro_rules! u8_to_unsigned_be {
@@ -19,12 +19,6 @@ macro_rules! u8_to_unsigned_be {
             0, |acc, i| acc | $src[$start+i] as $t << i * 8
         )
     })
-}
-
-impl Default for MessageClass {
-    fn default() -> Self {
-        MessageClass::Empty
-    }
 }
 
 /// The CoAP packet.
@@ -367,7 +361,8 @@ impl PacketTcp {
 #[cfg(test)]
 mod test {
 
-    use super::{super::header, *};
+    use super::*;
+    use crate::{PacketTcp, MessageClass, RequestType, ResponseType, CoapOption};
 
     #[test]
     fn test_decode_packet_length_0() {
@@ -412,7 +407,7 @@ mod test {
         let packet = packet.unwrap();
         assert_eq!(
             packet.code,
-            header::MessageClass::Request(header::RequestType::Get)
+            MessageClass::Request(RequestType::Get)
         );
         assert_eq!(*packet.get_token(), vec![0x51, 0x55, 0x77, 0xE8]);
     }
@@ -428,7 +423,7 @@ mod test {
         let packet = packet.unwrap();
         assert_eq!(
             packet.code,
-            header::MessageClass::Request(header::RequestType::Get)
+            MessageClass::Request(RequestType::Get)
         );
         assert_eq!(*packet.get_token(), vec![0x51, 0x55, 0x77, 0xE8]);
         assert_eq!(packet.options.len(), 2);
@@ -460,7 +455,7 @@ mod test {
         let packet = packet.unwrap();
         assert_eq!(
             packet.code,
-            header::MessageClass::Response(header::ResponseType::Content)
+            MessageClass::Response(ResponseType::Content)
         );
         assert_eq!(*packet.get_token(), vec![0x51, 0x55, 0x77, 0xE8]);
         assert_eq!(packet.payload, "Hello".as_bytes().to_vec());
@@ -478,7 +473,7 @@ mod test {
         let packet = packet.unwrap();
         assert_eq!(
             packet.code,
-            header::MessageClass::Request(header::RequestType::Get)
+            MessageClass::Request(RequestType::Get)
         );
         assert_eq!(*packet.get_token(), vec![0x51, 0x55, 0x77, 0xE8]);
         assert_eq!(packet.options.len(), 2);
@@ -533,7 +528,7 @@ mod test {
     fn test_encode_empty_packet_with_token_and_options() {
         let mut packet = PacketTcp::new();
 
-        packet.code = header::MessageClass::Request(header::RequestType::Get);
+        packet.code = MessageClass::Request(RequestType::Get);
 
         packet.set_token(vec![0x51, 0x55, 0x77, 0xE8]);
         packet.add_option(CoapOption::UriPath, b"Hi".to_vec());
@@ -605,7 +600,7 @@ mod test {
     fn test_encode_packet_with_payload() {
         let mut packet = PacketTcp::new();
         packet.code =
-            header::MessageClass::Response(header::ResponseType::Content);
+            MessageClass::Response(ResponseType::Content);
         packet.set_token(vec![0xD0, 0xE2, 0x4D, 0xAC]);
         packet.payload = "Hello".as_bytes().to_vec();
         assert_eq!(

@@ -4,9 +4,9 @@ use alloc::{
 };
 
 use super::{
-    header::{MessageClass, RequestType as Method},
     packet::{CoapOption, ObserveOption, Packet},
     response::CoapResponse,
+    MessageClass, RequestType as Method,
 };
 
 /// The CoAP request.
@@ -123,8 +123,8 @@ impl<Endpoint, T: Packet> Default for CoapRequest<Endpoint, T> {
 #[cfg(test)]
 mod test {
     use crate::PacketUdp;
-
-    use super::{super::header::MessageType, *};
+    use crate::MessageType;
+    use super::*;
 
     struct Endpoint(String);
 
