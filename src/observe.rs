@@ -164,11 +164,9 @@ mod test {
     use super::*;
     use crate::PacketUdp;
     use crate::{
-        MessageType, RequestType as Method,
-        packet::ObserveOption,
-        CoapRequest,
-        Subject
-        };
+        packet::ObserveOption, CoapRequest, MessageType,
+        RequestType as Method, Subject,
+    };
 
     type Endpoint = String;
 

@@ -295,10 +295,7 @@ mod test {
         assert!(packet.is_ok());
         let packet = packet.unwrap();
         assert_eq!(packet.header.get_version(), 1);
-        assert_eq!(
-            packet.header.get_type(),
-            MessageType::Acknowledgement
-        );
+        assert_eq!(packet.header.get_type(), MessageType::Acknowledgement);
         assert_eq!(packet.header.get_token_length(), 4);
         assert_eq!(
             packet.header.code,
@@ -314,8 +311,7 @@ mod test {
         let mut packet = PacketUdp::new();
         packet.header.set_version(1);
         packet.header.set_type(MessageType::Confirmable);
-        packet.header.code =
-            MessageClass::Request(RequestType::Get);
+        packet.header.code = MessageClass::Request(RequestType::Get);
         packet.header.message_id = 33950;
         packet.set_token(vec![0x51, 0x55, 0x77, 0xE8]);
         packet.add_option(CoapOption::UriPath, b"Hi".to_vec());
@@ -335,8 +331,7 @@ mod test {
         let mut packet = PacketUdp::new();
         packet.header.set_version(1);
         packet.header.set_type(MessageType::Acknowledgement);
-        packet.header.code =
-            MessageClass::Response(ResponseType::Content);
+        packet.header.code = MessageClass::Response(ResponseType::Content);
         packet.header.message_id = 5117;
         packet.set_token(vec![0xD0, 0xE2, 0x4D, 0xAC]);
         packet.payload = "Hello".as_bytes().to_vec();

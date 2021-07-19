@@ -1,8 +1,5 @@
 use chrono::Utc;
-use coap_lite::{
-    parse_from_stream, CoapRequest, ObserveOption, Packet, PacketTcp,
-    RequestType as Method,
-};
+use coap_lite::{CoapRequest, MessageError, ObserveOption, Packet, PacketTcp, RequestType as Method };
 use std::io::BufReader;
 use std::net::{SocketAddr, TcpStream};
 
@@ -86,4 +83,36 @@ fn main() {
             }
         }
     }
+}
+
+pub fn parse_from_stream(
+    reader: &mut dyn Read,
+) -> Result<PacketTcp, MessageError> {
+    let mut packet_buf = vec![0; 1];
+    reader.read_exact(&mut packet_buf).unwrap();
+    let byte = packet_buf[0];
+    let len_need_bytes: u8 = match byte >> 4 {
+        0..=12 => 0_u8,
+        13 => 1_u8,
+        14 => 2_u8,
+        15 => 4_u8,
+        _ => panic!("Protocol violation"),
+    };
+
+    packet_buf.resize(1 + usize::from(len_need_bytes), 0);
+    if len_need_bytes > 0 {
+        reader.read_exact(&mut packet_buf[1..]).unwrap();
+    }
+    let (payload_length, token_length) =
+        PacketTcp::parse_length(&mut 0, packet_buf.as_slice()).unwrap();
+
+    let header_length: usize = 1_usize + usize::from(len_need_bytes);
+
+    let packet_length: usize =
+        header_length + 1_usize + token_length + payload_length;
+
+    packet_buf.resize(packet_length, 0);
+    reader.read_exact(&mut packet_buf[header_length..]).unwrap();
+    println!("Incoming bytes {:?}", packet_buf);
+    PacketTcp::from_bytes(&packet_buf[..])
 }

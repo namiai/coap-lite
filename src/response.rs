@@ -98,8 +98,8 @@ impl<T: Packet> CoapResponse<T> {
 
 #[cfg(test)]
 mod test {
-    use crate::MessageType;
     use super::*;
+    use crate::MessageType;
     use crate::PacketUdp;
 
     #[test]

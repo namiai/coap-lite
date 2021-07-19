@@ -1,6 +1,7 @@
 use alloc::{collections::LinkedList, vec::Vec};
 use core::convert::TryFrom;
 use core::convert::TryInto;
+use std::usize;
 
 use crate::Packet;
 
@@ -152,12 +153,13 @@ impl Packet for PacketTcp {
 
         let options = decode_options(&mut idx, &buf)?;
         let options_len = idx - pre_options_idx;
+        let payload_len = packet_length - options_len;
         let payload = if packet_length > options_len && idx < buf.len() {
-            if packet_length - options_len != buf.len() - idx {
+            if payload_len > buf.len() - idx {
                 return Err(MessageError::InvalidPacketLength);
             }
             idx += 1;
-            buf[idx..].to_vec()
+            buf[idx..idx + payload_len - 1].to_vec()
         } else {
             Vec::new()
         };
@@ -356,13 +358,58 @@ impl PacketTcp {
             _ => Err(MessageError::InvalidPacketLength),
         }
     }
+
+    pub fn check_buf(buf: &[u8]) -> Option<usize> {
+        let mut total_bytes_in_packet:usize = 0;
+        if buf.len() <2 {
+            return None;
+        }
+        let byte = buf[0];
+        if byte == 0x0 {
+            // 0x0 -- in the first byte indicates that the length is 0 and token length is 0
+            if buf[1] != 0x0 {
+                return Some(2)
+            } else {
+            return None;
+            }
+        }
+        total_bytes_in_packet += 1;
+        let len_need_bytes: u8 = match byte >> 4 {
+            0..=12 => 0_u8,
+            13 => 1_u8,
+            14 => 2_u8,
+            15 => 4_u8,
+            _ => panic!("Protocol violation"),
+        };
+
+        total_bytes_in_packet += usize::from(len_need_bytes);
+        if len_need_bytes > 0 && buf.len() < total_bytes_in_packet {
+            return None
+        }
+
+        let remaining_length =
+            PacketTcp::parse_length(&mut 0, &buf[0..total_bytes_in_packet]);
+
+        if let Err(_) = remaining_length {
+            return None
+        }
+        let (payload_length, token_length) = remaining_length.unwrap();
+        total_bytes_in_packet += 1 + payload_length + token_length;
+        if buf.len() < total_bytes_in_packet {
+            return None;
+        } else {
+            return Some(total_bytes_in_packet);
+        }
+    }
 }
 
 #[cfg(test)]
 mod test {
 
     use super::*;
-    use crate::{PacketTcp, MessageClass, RequestType, ResponseType, CoapOption};
+    use crate::{
+        CoapOption, MessageClass, PacketTcp, RequestType, ResponseType,
+    };
 
     #[test]
     fn test_decode_packet_length_0() {
@@ -405,10 +452,7 @@ mod test {
         let packet = PacketTcp::from_bytes(&buf);
         assert!(packet.is_ok());
         let packet = packet.unwrap();
-        assert_eq!(
-            packet.code,
-            MessageClass::Request(RequestType::Get)
-        );
+        assert_eq!(packet.code, MessageClass::Request(RequestType::Get));
         assert_eq!(*packet.get_token(), vec![0x51, 0x55, 0x77, 0xE8]);
     }
 
@@ -421,10 +465,7 @@ mod test {
         let packet = PacketTcp::from_bytes(&buf);
         assert!(packet.is_ok());
         let packet = packet.unwrap();
-        assert_eq!(
-            packet.code,
-            MessageClass::Request(RequestType::Get)
-        );
+        assert_eq!(packet.code, MessageClass::Request(RequestType::Get));
         assert_eq!(*packet.get_token(), vec![0x51, 0x55, 0x77, 0xE8]);
         assert_eq!(packet.options.len(), 2);
 
@@ -452,11 +493,9 @@ mod test {
         ];
         let packet = PacketTcp::from_bytes(&buf);
         assert!(packet.is_ok());
+
         let packet = packet.unwrap();
-        assert_eq!(
-            packet.code,
-            MessageClass::Response(ResponseType::Content)
-        );
+        assert_eq!(packet.code, MessageClass::Response(ResponseType::Content));
         assert_eq!(*packet.get_token(), vec![0x51, 0x55, 0x77, 0xE8]);
         assert_eq!(packet.payload, "Hello".as_bytes().to_vec());
     }
@@ -471,10 +510,7 @@ mod test {
         let packet = PacketTcp::from_bytes(&buf);
         assert!(packet.is_ok());
         let packet = packet.unwrap();
-        assert_eq!(
-            packet.code,
-            MessageClass::Request(RequestType::Get)
-        );
+        assert_eq!(packet.code, MessageClass::Request(RequestType::Get));
         assert_eq!(*packet.get_token(), vec![0x51, 0x55, 0x77, 0xE8]);
         assert_eq!(packet.options.len(), 2);
 
@@ -493,6 +529,71 @@ mod test {
         expected_uri_query.push_back("a=1".as_bytes().to_vec());
         assert_eq!(*uri_query, expected_uri_query);
         assert_eq!(packet.payload, "Hello".as_bytes().to_vec());
+    }
+
+    #[test]
+    fn test_check_buf_empty_packet() {
+        let buf = vec![0;10];
+        let check_result = PacketTcp::check_buf(&buf[..]);
+        assert!(check_result.is_none());
+    }
+
+        #[test]
+    fn test_check_buf_packet_length_0() {
+        let buf = [0x0, 0x01,0x0,0x0];
+        let check_result = PacketTcp::check_buf(&buf);
+        assert!(check_result.is_some());
+        let check_result = check_result.unwrap();
+        assert_eq!(check_result, 2);
+
+                let buf = [0x1, 0x43,0x7f,0x0];
+        let check_result = PacketTcp::check_buf(&buf);
+        assert!(check_result.is_some());
+        let check_result = check_result.unwrap();
+        assert_eq!(check_result, 3);
+    }
+
+#[test]
+    fn test_check_buf_packet_with_token() {
+        let buf = [0x04, 0x01, 0x51, 0x55, 0x77, 0xe8, 0x0, 0x0];
+        let check_result = PacketTcp::check_buf(&buf);
+        assert!(check_result.is_some());
+        let check_result = check_result.unwrap();
+        assert_eq!(check_result, 6);
+    }
+
+    #[test]
+    fn test_check_buf_packet_with_options() {
+        let buf = [
+            0xc4, 0x01, 0x51, 0x55, 0x77, 0xe8, 0xb2, 0x48, 0x69, 0x04, 0x54,
+            0x65, 0x73, 0x74, 0x43, 0x61, 0x3d, 0x31, 0x0, 0x0
+        ];
+        let check_result = PacketTcp::check_buf(&buf);
+        assert!(check_result.is_some());
+        let check_result = check_result.unwrap();
+        assert_eq!(check_result, 18);
+    }
+
+    #[test]
+    fn test_check_buf_packet_with_options_and_payload() {
+        let mut buf = vec![
+            0xd4, 0x05, 0x01, 0x51, 0x55, 0x77, 0xe8, 0xb2, 0x48, 0x69, 0x04,
+            0x54, 0x65, 0x73, 0x74, 0x43, 0x61, 0x3d, 0x31, 0xff, 0x48, 0x65,
+            0x6c, 0x6c, 0x6f,
+        ];
+
+        let check_result = PacketTcp::check_buf(&buf[0..buf.len()-2]);
+        assert!(check_result.is_none());
+
+        let check_result = PacketTcp::check_buf(&buf[..]);
+        assert!(check_result.is_some());
+        assert_eq!(check_result.unwrap(), buf.len());
+
+        buf.push(0x01);
+        buf.push(0x02);
+        let check_result = PacketTcp::check_buf(&buf[..]);
+        assert!(check_result.is_some());
+        assert_eq!(check_result.unwrap(), buf.len() - 2);
     }
 
     #[test]
@@ -599,8 +700,7 @@ mod test {
     #[test]
     fn test_encode_packet_with_payload() {
         let mut packet = PacketTcp::new();
-        packet.code =
-            MessageClass::Response(ResponseType::Content);
+        packet.code = MessageClass::Response(ResponseType::Content);
         packet.set_token(vec![0xD0, 0xE2, 0x4D, 0xAC]);
         packet.payload = "Hello".as_bytes().to_vec();
         assert_eq!(

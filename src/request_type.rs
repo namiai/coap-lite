@@ -8,3 +8,30 @@ pub enum RequestType {
     UnKnown,
     CSM,
 }
+
+impl From<&str> for RequestType {
+    fn from(item: &str) -> Self {
+        match item {
+            "GET" => Self::Get,
+            "POST" => Self::Post,
+            "PUT" => Self::Put,
+            "DELETE" => Self::Delete,
+            "UNKNOWN" => Self::UnKnown,
+            "CSM" => Self::CSM,
+            _ => Self::UnKnown,
+        }
+    }
+}
+
+impl From<&RequestType> for String {
+    fn from(item: &RequestType) -> Self {
+        match item {
+            RequestType::Get => "GET".to_owned(),
+            RequestType::Post => "POST".to_owned(),
+            RequestType::Put => "PUT".to_owned(),
+            RequestType::Delete => "DELETE".to_owned(),
+            RequestType::CSM => "CSM".to_owned(),
+            RequestType::UnKnown => "UNKNOWN".to_owned(),
+        }
+    }
+}

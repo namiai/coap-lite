@@ -5,10 +5,7 @@ use alloc::{
 use core::convert::TryFrom;
 use std::fmt::{Display, Error, Formatter};
 
-use crate::{
-    error::{InvalidContentFormat, InvalidObserve, MessageError},
-    MessageClass, MessageType,
-};
+use crate::{MessageClass, MessageType, error::{InvalidContentFormat, InvalidObserve, MessageError}};
 
 macro_rules! u8_to_unsigned_be {
     ($src:ident, $start:expr, $end:expr, $t:ty) => ({

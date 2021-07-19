@@ -122,9 +122,9 @@ impl<Endpoint, T: Packet> Default for CoapRequest<Endpoint, T> {
 
 #[cfg(test)]
 mod test {
-    use crate::PacketUdp;
-    use crate::MessageType;
     use super::*;
+    use crate::MessageType;
+    use crate::PacketUdp;
 
     struct Endpoint(String);
 
