@@ -1,8 +1,8 @@
 use argh::FromArgs;
-use coap_lite::ObserveOption;
+use coap_lite::{ObserveOption, ResponseType};
 use coap_lite::{
     CoapOption, CoapRequest, CoapResponse, MessageClass, Packet, PacketTcp,
-    SignalType,
+    SignalType, CoapMessageExt, CoapSignal
 };
 use core::fmt;
 use rand::prelude::*;
@@ -235,7 +235,7 @@ async fn handle_incoming_stream(
             Some(packet_bytes_count) if (cursor >= packet_bytes_count) => {
                 let packet_bytes: Vec<u8> =
                     buf.drain(..packet_bytes_count).collect();
-                process_incoming_packet(packet_bytes, write_tx.clone(), &addr)
+                process_incoming_packet(packet_bytes, write_tx.clone())
                     .await?;
                 cursor -= packet_bytes_count;
                 continue;
@@ -257,7 +257,6 @@ async fn handle_incoming_stream(
 async fn process_incoming_packet(
     packet_bytes: Vec<u8>,
     write_tx: Sender<Vec<u8>>,
-    addr: &str,
 ) -> ResultCoapServerWithConnectionInit<()> {
     let parsed_packet = match PacketTcp::from_bytes(packet_bytes.as_slice()) {
         Ok(p) => p,
@@ -293,13 +292,15 @@ async fn process_incoming_packet(
     }
     match parsed_packet.get_message_class() {
         MessageClass::Signaling(SignalType::Ping) => {
-            send_pong(write_tx, &parsed_packet).await
+            send_pong(write_tx).await
         }
         MessageClass::Signaling(SignalType::CSM) => Ok(()),
         _ => {
-            let request: CoapRequest<String, PacketTcp> =
-                CoapRequest::from_packet(parsed_packet, addr.to_owned());
-
+            let request = match
+                CoapRequest::from_packet(parsed_packet) {
+                    Some(r) => r,
+                    None => return Ok(())
+                };
             let path = request.get_path();
             let observe_flag = request.get_observe_flag();
             let payload = match &path[..] {
@@ -309,8 +310,7 @@ async fn process_incoming_packet(
                             register_address_for_observe(
                                 write_tx.clone(),
                                 request.clone(),
-                            )
-                            .await
+                            );
                         }
                     }
                     generate_motion_stat().as_bytes().to_vec()
@@ -318,31 +318,30 @@ async fn process_incoming_packet(
                 _ => b"OK".to_vec(),
             };
 
-            let mut response = request.response.unwrap();
-            response.message.set_payload(payload);
-            response.set_observe_flag(ObserveOption::Register);
-            let packet = response.message.to_bytes().unwrap();
+            let mut response = match CoapResponse::from_request(&request,ResponseType::Content) {
+                Some(r) => r,
+                None => {
+                    warn!("Failed to construct response from request object {:?}", request);
+                    return Ok(())
+                }
+            };
+            response.set_payload(payload);
+            response.set_observe_value(generate_observe_value());
+            let packet = response.to_bytes().unwrap();
             trace!("Replying with packet {:?}", packet);
             write_tx.send(packet).await.map_err(|_| {
                 CoapServerWithConnectionInitError::StreamWriteError
             })
+
         }
     }
 }
 
-async fn send_pong(
-    write_tx: Sender<Vec<u8>>,
-    packet: &PacketTcp,
-) -> ResultCoapServerWithConnectionInit<()> {
+async fn send_pong(write_tx: Sender<Vec<u8>>) -> ResultCoapServerWithConnectionInit<()> {
     trace!("Sending Pong");
-    let mut reply = CoapResponse::new(packet).unwrap();
-    reply
-        .message
-        .set_code_from_message_class(MessageClass::Signaling(
-            SignalType::Pong,
-        ));
+    let pong = CoapSignal::new(SignalType::Pong);
     write_tx
-        .send(reply.message.to_bytes().unwrap())
+        .send(pong.to_bytes().unwrap())
         .await
         .map_err(|_| CoapServerWithConnectionInitError::StreamWriteError)
 }
@@ -391,29 +390,32 @@ fn generate_motion_stat() -> String {
     .to_string()
 }
 
-async fn register_address_for_observe(
+fn register_address_for_observe(
     write_tx: Sender<Vec<u8>>,
-    request: CoapRequest<String, PacketTcp>,
+    request: CoapRequest<PacketTcp>,
 ) {
     let start_time = chrono::Utc::now();
     tokio::spawn(async move {
         loop {
-            sleep(Duration::from_millis(1000)).await;
-            let local_request = request.clone();
-            let mut response = local_request.response.unwrap();
-            response.message.set_observe(generate_observe_value());
+            sleep(Duration::from_millis(10000)).await;
+            let mut response = match CoapResponse::from_request(&request,ResponseType::Content) {
+                Some(r) => r,
+                None => {
+                    warn!("Failed to construct response from request object {:?}", request);
+                    continue;
+                }
+            };
+            response.set_observe_value(generate_observe_value());
             response
-                .message
                 .set_payload(generate_motion_stat().as_bytes().into());
             let mut etag_option: LinkedList<Vec<u8>> = LinkedList::new();
             etag_option.push_front(
                 chrono::Utc::now().timestamp().to_be_bytes().to_vec(),
             );
             response
-                .message
                 .set_option(coap_lite::CoapOption::ETag, etag_option);
-            trace!("Sending the observe message {:?}", response.message);
-            let packet = response.message.to_bytes().unwrap();
+            trace!("Sending the observe message {:?}", response);
+            let packet = response.to_bytes().unwrap();
             if let Err(_) = write_tx.send(packet).await {
                 break;
             }

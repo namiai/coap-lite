@@ -12,6 +12,8 @@ where
     fn process_incoming_message(
         &self,
         message: T,
+        cn: &str,
+        path: &str,
     ) -> Result<(), MessageSinkError>;
 }
 
@@ -41,10 +43,15 @@ impl DevNullMessageSink {
     }
 }
 
-impl<T> MessageSink<T> for DevNullMessageSink where T:Packet {
+impl<T> MessageSink<T> for DevNullMessageSink
+where
+    T: Packet,
+{
     fn process_incoming_message(
         &self,
         _: T,
+        _: &str,
+        _: &str,
     ) -> Result<(), MessageSinkError> {
         Ok(())
     }
@@ -78,15 +85,17 @@ where
     fn process_incoming_message(
         &self,
         message: T,
+        cn: &str,
+        path: &str,
     ) -> Result<(), MessageSinkError> {
         let message_class = message.get_message_class();
         let payload = message.get_payload();
-        let token = message.get_token();
 
         let sink_message = json!({
             "code": message_class.to_string(),
             "payload": encode(payload),
-            "token": encode(token)
+            "cn": cn,
+            "path": path
         });
 
         let mut connection = self.redis_pool.get().map_err(|e| {

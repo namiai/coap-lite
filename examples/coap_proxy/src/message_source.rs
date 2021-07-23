@@ -1,28 +1,38 @@
 extern crate base64;
+use serde::{Serialize, Deserialize};
 use crate::redis::Commands;
-use base64::decode;
-use coap_lite::Packet;
 use std::error::Error;
 
 #[derive(Debug)]
 pub enum MessageSourceError {
     InitError(String),
-    MessageFetchingError(String)
+    FetchError(String),
+    ParseError(String)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MessageToDevice {
+    pub code: String,
+    pub payload: String,
+    pub cn: String,
+    pub path: String
 }
 
 impl std::fmt::Display for MessageSourceError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::InitError(e) => write!(f, "Failed to initialize the message sink due to the following error: {}", e),
-            Self::MessageFetchingError(e) => write!(f, "Failed to fetch the message: {}", e),
+            Self::FetchError(e) => write!(f, "Failed to fetch the message: {}", e),
+            Self::ParseError(e) => write!(f, "Failed to parse the message: {}", e),
         }
     }
 }
 
 impl Error for MessageSourceError {}
 
-pub trait MessageSource<T> where T:Packet {
-    fn fetch_new_message(&self) -> Result<(T, String), MessageSourceError>;
+pub trait MessageSource
+{
+    fn fetch_new_message(&self) -> Result<MessageToDevice, MessageSourceError>;
 }
 
 pub struct RedisMessageSource {
@@ -48,23 +58,21 @@ impl RedisMessageSource {
     }
 }
 
-impl<T> MessageSource<T> for RedisMessageSource
-where
-    T: Packet,
+impl MessageSource for RedisMessageSource
 {
-    fn fetch_new_message(&self) -> Result<(T, String), MessageSourceError> {
+    fn fetch_new_message(&self) -> Result<MessageToDevice, MessageSourceError> {
         let mut connection = self.redis_pool.get().map_err(|e| {
-            MessageSourceError::MessageFetchingError(e.to_string())
+            MessageSourceError::FetchError(e.to_string())
         })?;
 
         let new_msg = connection
             .blpop::<&str, (String, String)>(&self.key_name, 0)
             .map_err(|e| {
-                MessageSourceError::MessageFetchingError(e.to_string())
+                MessageSourceError::FetchError(e.to_string())
             })?;
 
-        let cn = "123".to_string();
-        trace!("New message to send to device {}: {}", new_msg.1);
-        Ok((T::new(), cn))
+        let parsed_msg: MessageToDevice = serde_json::from_str(&new_msg.1).map_err(|e| MessageSourceError::ParseError(e.to_string()))?;
+        trace!("New message to send to device {:?}", parsed_msg);
+        Ok(parsed_msg)
     }
 }

@@ -1,6 +1,6 @@
 use coap_lite::{
-    CoapOption, CoapRequest, CoapResponse, MessageClass, Packet, PacketTcp,
-    RequestType, SignalType,
+    CoapOption, CoapRequest, CoapResponse, CoapSignal, MessageClass, Packet,
+    PacketTcp, RequestType, SignalType, CoapMessageExt
 };
 use std::io::{BufReader, Read, Write};
 use std::net::TcpListener;
@@ -128,30 +128,20 @@ fn handle_incoming_data(stream: &mut (impl Read + Write)) {
             }
         }
         match parsed_packet.get_message_class() {
-            MessageClass::Signaling(SignalType::Ping) => {
-                send_pong(stream, &parsed_packet)
-            }
+            MessageClass::Signaling(SignalType::Ping) => send_pong(stream),
             _ => return,
         }
     }
 }
 
-fn send_pong(stream: &mut impl Write, packet: &PacketTcp) {
+fn send_pong(stream: &mut impl Write) {
     println!("Sending Pong");
-    let mut reply = CoapResponse::new(packet).unwrap();
-    reply
-        .message
-        .set_code_from_message_class(MessageClass::Signaling(
-            SignalType::Pong,
-        ));
-    stream
-        .write_all(&reply.message.to_bytes().unwrap()[..])
-        .unwrap();
+    let reply = CoapSignal::new(SignalType::Pong);
+    stream.write_all(&reply.to_bytes().unwrap()[..]).unwrap();
 }
 
 fn send_test_get(stream: &mut impl Write) {
-    let mut request: CoapRequest<String, PacketTcp> = CoapRequest::new();
-    request.set_method(RequestType::Get);
+    let mut request: CoapRequest<PacketTcp> = CoapRequest::new(RequestType::Get);
     request.set_path("/motion");
     stream
         .write_all(&request.message.to_bytes().unwrap()[..])

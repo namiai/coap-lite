@@ -1,5 +1,8 @@
 use chrono::Utc;
-use coap_lite::{CoapRequest, MessageError, ObserveOption, Packet, PacketTcp, RequestType as Method };
+use coap_lite::{
+    CoapRequest, MessageError, ObserveOption, Packet, PacketTcp,
+    RequestType, CoapMessageExt
+};
 use std::io::BufReader;
 use std::net::{SocketAddr, TcpStream};
 
@@ -47,9 +50,8 @@ fn main() {
     tls.read_to_end(&mut plaintext).unwrap();
     stdout().write_all(&plaintext).unwrap();
 
-    let mut request: CoapRequest<SocketAddr, PacketTcp> = CoapRequest::new();
+    let mut request: CoapRequest<PacketTcp> = CoapRequest::new(RequestType::Get);
 
-    request.set_method(Method::Get);
     request.set_path("/test");
     request.message.set_token(vec![0x7d, 0x34]);
     request

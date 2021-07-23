@@ -80,9 +80,24 @@ where
         .map(|_| ClientCertVerified::assertion())?;
 
         let cn = extract_cn_from_presented_certificates(&presented_certs)
-            .map_err(|e| TLSError::General(ClientCertificateAuthenticationError::BanCheckFailed(e.to_string()).to_string()))?;
+            .map_err(|e| {
+                TLSError::General(
+                    ClientCertificateAuthenticationError::BanCheckFailed(
+                        e.to_string(),
+                    )
+                    .to_string(),
+                )
+            })?;
 
-        let cn_is_banned = self.banlist_checker.cn_is_banned(&cn).map_err(|e| TLSError::General(ClientCertificateAuthenticationError::BanCheckFailed(e.to_string()).to_string()))?;
+        let cn_is_banned =
+            self.banlist_checker.cn_is_banned(&cn).map_err(|e| {
+                TLSError::General(
+                    ClientCertificateAuthenticationError::BanCheckFailed(
+                        e.to_string(),
+                    )
+                    .to_string(),
+                )
+            })?;
         if cn_is_banned {
             info!("Rejecting access for the client with banned certificate, common name is {}", cn);
             Err(TLSError::General(

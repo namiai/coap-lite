@@ -6,7 +6,6 @@ pub enum RequestType {
     Put,
     Delete,
     UnKnown,
-    CSM,
 }
 
 impl From<&str> for RequestType {
@@ -17,7 +16,6 @@ impl From<&str> for RequestType {
             "PUT" => Self::Put,
             "DELETE" => Self::Delete,
             "UNKNOWN" => Self::UnKnown,
-            "CSM" => Self::CSM,
             _ => Self::UnKnown,
         }
     }
@@ -30,7 +28,6 @@ impl From<&RequestType> for String {
             RequestType::Post => "POST".to_owned(),
             RequestType::Put => "PUT".to_owned(),
             RequestType::Delete => "DELETE".to_owned(),
-            RequestType::CSM => "CSM".to_owned(),
             RequestType::UnKnown => "UNKNOWN".to_owned(),
         }
     }

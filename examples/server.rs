@@ -1,4 +1,4 @@
-use coap_lite::{CoapRequest, ObserveOption, Packet, PacketUdp};
+use coap_lite::{CoapRequest, CoapResponse, ObserveOption, Packet, PacketUdp, ResponseType, CoapMessageExt};
 use rand::prelude::*;
 use serde_json::json;
 use std::{
@@ -18,10 +18,9 @@ fn main() {
         println!("Payload {:x?}", &buf[..size]);
 
         let packet = PacketUdp::from_bytes(&buf[..size]).unwrap();
-        let request: CoapRequest<SocketAddr, PacketUdp> =
-            CoapRequest::from_packet(packet, src);
+        let request: CoapRequest<PacketUdp> = CoapRequest::from_packet(packet).unwrap();
 
-        let method = request.get_method().clone();
+        let method = request.get_request_type();
         let path = request.get_path();
         let observe_flag = request.get_observe_flag();
 
@@ -48,10 +47,10 @@ fn main() {
             _ => b"OK".to_vec(),
         };
 
-        let mut response = request.response.unwrap();
-        response.message.set_payload(payload);
-        response.set_observe_flag(ObserveOption::Register);
-        let packet = response.message.to_bytes().unwrap();
+        let mut response:CoapResponse<PacketUdp> = CoapResponse::from_request(&request, ResponseType::Content).unwrap();
+        response.set_payload(payload);
+        response.set_observe_value(generate_observe_value());
+        let packet = response.to_bytes().unwrap();
         socket
             .send_to(&packet[..], &src)
             .expect("Could not send the data");
@@ -75,24 +74,21 @@ fn generate_motion_stat() -> String {
 fn register_address_for_observe(
     socket: UdpSocket,
     src: SocketAddr,
-    request: CoapRequest<SocketAddr, PacketUdp>,
+    request: CoapRequest<PacketUdp>,
 ) {
     let start_time = chrono::Utc::now();
     thread::spawn(move || loop {
         thread::sleep(Duration::from_millis(1000));
-        let local_request = request.clone();
-        let mut response = local_request.response.unwrap();
-        response.message.set_observe(generate_observe_value());
+        let mut response = CoapResponse::from_request(&request, ResponseType::Content).unwrap();
+        response.set_observe_value(generate_observe_value());
         response
-            .message
             .set_payload(generate_motion_stat().as_bytes().into());
         let mut etag_option: LinkedList<Vec<u8>> = LinkedList::new();
         etag_option
             .push_front(chrono::Utc::now().timestamp().to_be_bytes().to_vec());
         response
-            .message
             .set_option(coap_lite::CoapOption::ETag, etag_option);
-        let packet = response.message.to_bytes().unwrap();
+        let packet = response.to_bytes().unwrap();
         if let Err(_) = socket.send_to(&packet[..], src) {
             break;
         }

@@ -265,6 +265,33 @@ pub trait Packet: Sized {
     fn get_message_id(&self) -> Option<u16>;
     fn set_payload(&mut self, payload: Vec<u8>);
     fn get_payload(&self) -> &Vec<u8>;
+
+    fn set_path(&mut self, path: &str) {
+        self.clear_option(CoapOption::UriPath);
+
+        let segs = path.split('/');
+        for (i, s) in segs.enumerate() {
+            if i == 0 && s.is_empty() {
+                continue;
+            }
+
+            self.add_option(CoapOption::UriPath, s.as_bytes().to_vec());
+        }
+    }
+    fn get_path(&self) -> String {
+        match self.get_option(CoapOption::UriPath) {
+            Some(options) => {
+                let mut vec = Vec::new();
+                for option in options.iter() {
+                    if let Ok(seg) = core::str::from_utf8(option) {
+                        vec.push(seg);
+                    }
+                }
+                vec.join("/")
+            }
+            _ => "".to_string(),
+        }
+    }
 }
 
 pub fn decode_options(
