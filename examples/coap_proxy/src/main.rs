@@ -7,7 +7,8 @@ mod message_sink;
 mod message_source;
 
 use argh::FromArgs;
-use coap_lite::{Packet, PacketTcp};
+use client_connection::RequestResponseMap;
+use coap_lite::{Packet, PacketTcp, MessageClass};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
@@ -73,7 +74,12 @@ struct Options {
 }
 
 type ResultCoapProxy<T> = std::result::Result<T, CoapProxyError>;
-type ConnectedClientsMap = Arc<RwLock<HashMap<String, Sender<Vec<u8>>>>>;
+struct ConnectedClientEntry {
+    write_tx: Sender<Vec<u8>>,
+    request_response_map: Arc<Mutex<RequestResponseMap>>
+}
+
+type ConnectedClientsMap = Arc<RwLock<HashMap<String, ConnectedClientEntry>>>;
 
 #[tokio::main]
 async fn main() -> ResultCoapProxy<()> {
@@ -85,8 +91,8 @@ async fn main() -> ResultCoapProxy<()> {
         .addr
         .to_socket_addrs()
         .map_err(|_| CoapProxyError::AddrNotAvailable)?
-        .next()
-        .ok_or_else(|| CoapProxyError::AddrNotAvailable)?;
+    .next()
+    .ok_or_else(|| CoapProxyError::AddrNotAvailable)?;
     let certs = load_certs(&options.cert)?;
     let ca_certs = load_certs(&options.ca)?;
     let mut keys = load_keys(&options.key)?;
@@ -163,10 +169,14 @@ async fn main() -> ResultCoapProxy<()> {
                 let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>(30);
                 let mut client_connection =
                     ClientConnection::new(write_tx.clone(), &cn, &sink);
+                let connected_client_entry = ConnectedClientEntry {
+                    write_tx: write_tx.clone(),
+                    request_response_map: client_connection.request_response_map.clone()
+                };
                 connected_clients_map
                     .write()
                     .await
-                    .insert(cn.to_owned(), write_tx.clone());
+                    .insert(cn.to_owned(), connected_client_entry);
                 match client_connection.process_stream(stream, write_rx).await
                 {
                     Ok(_) => {
@@ -206,7 +216,18 @@ fn start_message_source(options: &Options, connected_clients_map: ConnectedClien
                         }
                     };
 
-                    packet.set_token(generate_random_token().into());
+                    // Token is set only when we need to forward the request
+                    // Response will go as is.
+                    // Token will be later used to fetch the endpoint request was sent to
+                    let token = match packet.get_message_class() {
+                        MessageClass::Request(_) => {
+                            let token = generate_random_token().to_vec();
+                            trace!("Message to send is of type request, setting token {:?}", token);
+                            token
+                        },
+                        _ => vec![]
+                    };
+                    packet.set_token(token.clone());
                     packet.set_path(&msg_to_send.path);
                     packet.set_payload(payload);
                     let packet = match packet.to_bytes() {
@@ -219,26 +240,27 @@ fn start_message_source(options: &Options, connected_clients_map: ConnectedClien
                             continue;
                         }
                     };
-                    {
-                        let connected_clients_map =
-                            connected_clients_map.read().await;
-                        let write_tx = match connected_clients_map.get(&cn) {
-                            Some(write_tx) => write_tx,
-                            None => {
-                                warn!("Client with CN {} is not connected", cn);
-                                continue;
-                            }
-                        };
-                        debug!("Sending the message in the channel");
-                        if let Err(e) = write_tx.send(packet).await {
-                            warn!(
-                                "Failed to send the message to the device {}: {}",
-                                cn,
-                                e.to_string()
-                            );
+                    let connected_clients_map =
+                        connected_clients_map.read().await;
+                    let connected_client_entry = match connected_clients_map.get(&cn) {
+                        Some(write_tx) => write_tx,
+                        None => {
+                            warn!("Client with CN {} is not connected", cn);
+                            continue;
                         }
-                        debug!("Sent the message in the channel");
-                        // yield_now().await;
+                    };
+                    if !token.is_empty() {
+                        connected_client_entry.request_response_map.lock().await.insert(token.clone(), msg_to_send.path.clone());
+                    }
+                    if let Err(e) = connected_client_entry.write_tx.send(packet).await {
+                        warn!(
+                            "Failed to send the message to the device {}: {}",
+                            cn,
+                            e.to_string()
+                        );
+                        if !token.is_empty() {
+                            connected_client_entry.request_response_map.lock().await.remove(&token.to_vec());
+                        }
                     }
                 }
                 Ok(Err(e)) => {

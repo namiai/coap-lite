@@ -30,6 +30,9 @@ impl std::fmt::Display for MessageSourceError {
 
 impl Error for MessageSourceError {}
 
+/// Trait to represent message sources:
+/// they fetch message from somewhere and return it to caller
+/// NB!: `fetch_new_message` call is blocking, be sure to run it from the right task (i.e tokio::task::spawn_blocking)
 pub trait MessageSource
 {
     fn fetch_new_message(&self) -> Result<MessageToDevice, MessageSourceError>;

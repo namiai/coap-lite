@@ -7,17 +7,20 @@ use tokio::{
     io::{split, AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
     sync::mpsc::{Receiver, Sender},
+    sync::Mutex,
 };
 use tokio_rustls::server::TlsStream;
 
 use crate::{CoapProxyError, ResultCoapProxy, generate_random_token, message_sink::MessageSink};
 
+pub type RequestResponseMap = HashMap<Vec<u8>, String>;
 pub struct ClientConnection<'a, S: MessageSink<PacketTcp>> {
-    request_response_map: HashMap<Vec<u8>, String>,
+    pub request_response_map: Arc<Mutex<RequestResponseMap>>,
     write_tx: Sender<Vec<u8>>,
     cn: &'a str,
     sink: &'a Arc<S>,
 }
+
 
 impl<'a, S: MessageSink<PacketTcp>> ClientConnection<'a, S> {
     pub fn new(
@@ -25,7 +28,7 @@ impl<'a, S: MessageSink<PacketTcp>> ClientConnection<'a, S> {
         cn: &'a str,
         sink: &'a Arc<S>,
     ) -> ClientConnection<'a, S> {
-        let request_response_map: HashMap<Vec<u8>, String> = HashMap::new();
+        let request_response_map: Arc<Mutex<RequestResponseMap>> = Arc::new(Mutex::new(HashMap::new()));
         ClientConnection {
             write_tx,
             request_response_map,
@@ -109,7 +112,7 @@ impl<'a, S: MessageSink<PacketTcp>> ClientConnection<'a, S> {
         let path = "/motion";
         request.set_token(token.into());
         request.set_path("/motion");
-        request.set_observe_flag(coap_lite::ObserveOption::Register);
+        // request.set_observe_flag(coap_lite::ObserveOption::Register);
         let bytes = request.to_bytes().expect(&format!(
             "Cannot encode CoAP message as bytes {:?}",
             request
@@ -118,7 +121,7 @@ impl<'a, S: MessageSink<PacketTcp>> ClientConnection<'a, S> {
             .send(bytes)
             .await
             .map_err(|_| CoapProxyError::StreamWriteError)?;
-        self.request_response_map.insert(token.into(), path.to_owned());
+        self.request_response_map.lock().await.insert(token.into(), path.to_owned());
         Ok(())
     }
 
@@ -198,8 +201,12 @@ impl<'a, S: MessageSink<PacketTcp>> ClientConnection<'a, S> {
                             warn!("No token in response {:?}", parsed_packet);
                             return Ok(())
                         }
-                        let path = match self.request_response_map.get(token) {
-                            Some(p) => p.clone(),
+                        let mut request_response_map = self.request_response_map.lock().await;
+                        let path = match request_response_map.get(token) {
+                            Some(p) => {
+                                trace!("Found the request matching the token {:?}, path is {}", token, p);
+                                p.clone()
+                            },
                             None => {
                                 warn!("Cannot find the corresponding request for token {:?}", token);
                                 return Ok(())
@@ -209,7 +216,7 @@ impl<'a, S: MessageSink<PacketTcp>> ClientConnection<'a, S> {
                         match parsed_packet.get_observe() {
                             Some(_) => {},
                             None => {
-                                self.request_response_map.remove(token);
+                                request_response_map.remove(token);
                             }
                         };
                         path

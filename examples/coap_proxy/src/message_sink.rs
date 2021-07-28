@@ -5,6 +5,9 @@ use coap_lite::Packet;
 use serde_json::json;
 use std::error::Error;
 
+/// Trait to represent message sinks:
+/// they receive the CoAP message and forward it somewhere,
+/// for example save it into redis or in the file system
 pub trait MessageSink<T>
 where
     T: Packet,
@@ -34,6 +37,8 @@ impl std::fmt::Display for MessageSinkError {
 
 impl Error for MessageSinkError {}
 
+/// The simplest possible message sink
+/// Just discards the message
 pub struct DevNullMessageSink {}
 
 impl DevNullMessageSink {
@@ -56,12 +61,16 @@ where
         Ok(())
     }
 }
+
+/// Message sink that saves data to redis DB
+/// RPUSHes the json-encoded message to the key defined during the sink init
 pub struct RedisMessageSink {
     redis_pool: r2d2::Pool<redis::Client>,
     key_name: String,
 }
 
 impl RedisMessageSink {
+    /// Constructs new redis sink with specified connection string and key name
     pub fn new(
         connection_url: &str,
         key_name: &str,

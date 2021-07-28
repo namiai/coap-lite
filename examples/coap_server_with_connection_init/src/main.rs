@@ -162,7 +162,6 @@ async fn main() -> ResultCoapServerWithConnectionInit<()> {
                 handle_incoming_stream(
                     &mut read_half,
                     write_half,
-                    (&addr).to_owned().to_string(),
                 )
                 .await?;
                 debug!("Shutting down the stream");
@@ -201,7 +200,6 @@ async fn send_csm(
 async fn handle_incoming_stream(
     read_half: &mut (impl AsyncRead + Unpin),
     write_half: WriteHalf<TlsStream<TcpStream>>,
-    addr: String,
 ) -> ResultCoapServerWithConnectionInit<()> {
     let (write_tx, mut write_rx) = mpsc::channel::<Vec<u8>>(30);
     tokio::spawn(async move {
@@ -326,7 +324,9 @@ async fn process_incoming_packet(
                 }
             };
             response.set_payload(payload);
-            response.set_observe_value(generate_observe_value());
+            if observe_flag.map_or(false, |el| el == ObserveOption::Register) {
+                response.set_observe_value(generate_observe_value());
+            }
             let packet = response.to_bytes().unwrap();
             trace!("Replying with packet {:?}", packet);
             write_tx.send(packet).await.map_err(|_| {
