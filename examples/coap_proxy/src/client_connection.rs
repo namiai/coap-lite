@@ -2,7 +2,10 @@ use coap_lite::{
     CoapMessageExt, CoapOption, CoapRequest, CoapSignal, MessageClass, Packet,
     PacketTcp, RequestType, SignalType,
 };
-use std::{collections::{HashMap, LinkedList}, sync::Arc};
+use std::{
+    collections::{HashMap, LinkedList},
+    sync::Arc,
+};
 use tokio::{
     io::{split, AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
@@ -11,7 +14,10 @@ use tokio::{
 };
 use tokio_rustls::server::TlsStream;
 
-use crate::{CoapProxyError, ResultCoapProxy, generate_random_token, message_sink::MessageSink};
+use crate::{
+    generate_random_token, message_sink::MessageSink, CoapProxyError,
+    ResultCoapProxy,
+};
 
 pub type RequestResponseMap = HashMap<Vec<u8>, String>;
 pub struct ClientConnection<'a, S: MessageSink<PacketTcp>> {
@@ -21,14 +27,14 @@ pub struct ClientConnection<'a, S: MessageSink<PacketTcp>> {
     sink: &'a Arc<S>,
 }
 
-
 impl<'a, S: MessageSink<PacketTcp>> ClientConnection<'a, S> {
     pub fn new(
         write_tx: Sender<Vec<u8>>,
         cn: &'a str,
         sink: &'a Arc<S>,
     ) -> ClientConnection<'a, S> {
-        let request_response_map: Arc<Mutex<RequestResponseMap>> = Arc::new(Mutex::new(HashMap::new()));
+        let request_response_map: Arc<Mutex<RequestResponseMap>> =
+            Arc::new(Mutex::new(HashMap::new()));
         ClientConnection {
             write_tx,
             request_response_map,
@@ -121,7 +127,10 @@ impl<'a, S: MessageSink<PacketTcp>> ClientConnection<'a, S> {
             .send(bytes)
             .await
             .map_err(|_| CoapProxyError::StreamWriteError)?;
-        self.request_response_map.lock().await.insert(token.into(), path.to_owned());
+        self.request_response_map
+            .lock()
+            .await
+            .insert(token.into(), path.to_owned());
         Ok(())
     }
 
@@ -199,29 +208,30 @@ impl<'a, S: MessageSink<PacketTcp>> ClientConnection<'a, S> {
                         let token = parsed_packet.get_token();
                         if token.len() == 0 {
                             warn!("No token in response {:?}", parsed_packet);
-                            return Ok(())
+                            return Ok(());
                         }
-                        let mut request_response_map = self.request_response_map.lock().await;
+                        let mut request_response_map =
+                            self.request_response_map.lock().await;
                         let path = match request_response_map.get(token) {
                             Some(p) => {
                                 trace!("Found the request matching the token {:?}, path is {}", token, p);
                                 p.clone()
-                            },
+                            }
                             None => {
                                 warn!("Cannot find the corresponding request for token {:?}", token);
-                                return Ok(())
+                                return Ok(());
                             }
                         };
 
                         match parsed_packet.get_observe() {
-                            Some(_) => {},
+                            Some(_) => {}
                             None => {
                                 request_response_map.remove(token);
                             }
                         };
                         path
-                    },
-                    _ => "".to_owned()
+                    }
+                    _ => "".to_owned(),
                 };
                 if let Err(e) = self.sink.process_incoming_message(
                     parsed_packet,

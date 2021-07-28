@@ -1,13 +1,13 @@
 extern crate base64;
-use serde::{Serialize, Deserialize};
 use crate::redis::Commands;
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 
 #[derive(Debug)]
 pub enum MessageSourceError {
     InitError(String),
     FetchError(String),
-    ParseError(String)
+    ParseError(String),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -15,7 +15,7 @@ pub struct MessageToDevice {
     pub code: String,
     pub payload: String,
     pub cn: String,
-    pub path: String
+    pub path: String,
 }
 
 impl std::fmt::Display for MessageSourceError {
@@ -33,9 +33,9 @@ impl Error for MessageSourceError {}
 /// Trait to represent message sources:
 /// they fetch message from somewhere and return it to caller
 /// NB!: `fetch_new_message` call is blocking, be sure to run it from the right task (i.e tokio::task::spawn_blocking)
-pub trait MessageSource
-{
-    fn fetch_new_message(&self) -> Result<MessageToDevice, MessageSourceError>;
+pub trait MessageSource {
+    fn fetch_new_message(&self)
+        -> Result<MessageToDevice, MessageSourceError>;
 }
 
 pub struct RedisMessageSource {
@@ -61,20 +61,21 @@ impl RedisMessageSource {
     }
 }
 
-impl MessageSource for RedisMessageSource
-{
-    fn fetch_new_message(&self) -> Result<MessageToDevice, MessageSourceError> {
-        let mut connection = self.redis_pool.get().map_err(|e| {
-            MessageSourceError::FetchError(e.to_string())
-        })?;
+impl MessageSource for RedisMessageSource {
+    fn fetch_new_message(
+        &self,
+    ) -> Result<MessageToDevice, MessageSourceError> {
+        let mut connection = self
+            .redis_pool
+            .get()
+            .map_err(|e| MessageSourceError::FetchError(e.to_string()))?;
 
         let new_msg = connection
             .blpop::<&str, (String, String)>(&self.key_name, 0)
-            .map_err(|e| {
-                MessageSourceError::FetchError(e.to_string())
-            })?;
+            .map_err(|e| MessageSourceError::FetchError(e.to_string()))?;
 
-        let parsed_msg: MessageToDevice = serde_json::from_str(&new_msg.1).map_err(|e| MessageSourceError::ParseError(e.to_string()))?;
+        let parsed_msg: MessageToDevice = serde_json::from_str(&new_msg.1)
+            .map_err(|e| MessageSourceError::ParseError(e.to_string()))?;
         trace!("New message to send to device {:?}", parsed_msg);
         Ok(parsed_msg)
     }

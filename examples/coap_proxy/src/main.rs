@@ -7,8 +7,9 @@ mod message_sink;
 mod message_source;
 
 use argh::FromArgs;
+use base64::decode;
 use client_connection::RequestResponseMap;
-use coap_lite::{Packet, PacketTcp, MessageClass};
+use coap_lite::{MessageClass, Packet, PacketTcp};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
@@ -24,7 +25,6 @@ use tokio_rustls::rustls::RootCertStore;
 use tokio_rustls::rustls::Session;
 use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
 use tokio_rustls::TlsAcceptor;
-use base64::decode;
 
 use banlist_checker::RedisBanListChecker;
 use client_cert_verifier::AllowAuthenticatedClientsWithNotBannedCertificates;
@@ -76,7 +76,7 @@ struct Options {
 type ResultCoapProxy<T> = std::result::Result<T, CoapProxyError>;
 struct ConnectedClientEntry {
     write_tx: Sender<Vec<u8>>,
-    request_response_map: Arc<Mutex<RequestResponseMap>>
+    request_response_map: Arc<Mutex<RequestResponseMap>>,
 }
 
 type ConnectedClientsMap = Arc<RwLock<HashMap<String, ConnectedClientEntry>>>;
@@ -91,8 +91,8 @@ async fn main() -> ResultCoapProxy<()> {
         .addr
         .to_socket_addrs()
         .map_err(|_| CoapProxyError::AddrNotAvailable)?
-    .next()
-    .ok_or_else(|| CoapProxyError::AddrNotAvailable)?;
+        .next()
+        .ok_or_else(|| CoapProxyError::AddrNotAvailable)?;
     let certs = load_certs(&options.cert)?;
     let ca_certs = load_certs(&options.ca)?;
     let mut keys = load_keys(&options.key)?;
@@ -171,7 +171,9 @@ async fn main() -> ResultCoapProxy<()> {
                     ClientConnection::new(write_tx.clone(), &cn, &sink);
                 let connected_client_entry = ConnectedClientEntry {
                     write_tx: write_tx.clone(),
-                    request_response_map: client_connection.request_response_map.clone()
+                    request_response_map: client_connection
+                        .request_response_map
+                        .clone(),
                 };
                 connected_clients_map
                     .write()
@@ -196,14 +198,22 @@ async fn main() -> ResultCoapProxy<()> {
     }
 }
 
-fn start_message_source(options: &Options, connected_clients_map: ConnectedClientsMap) {
+fn start_message_source(
+    options: &Options,
+    connected_clients_map: ConnectedClientsMap,
+) {
     let source = Arc::new(
         RedisMessageSource::new(&options.source_redis_url, "to_device")
-            .expect("Failed to create redis message source"));
+            .expect("Failed to create redis message source"),
+    );
     tokio::spawn(async move {
         loop {
             let source = source.clone();
-            match tokio::task::spawn_blocking(move || source.fetch_new_message()).await {
+            match tokio::task::spawn_blocking(move || {
+                source.fetch_new_message()
+            })
+            .await
+            {
                 Ok(Ok(msg_to_send)) => {
                     let mut packet: PacketTcp = PacketTcp::new();
                     let cn = msg_to_send.cn;
@@ -211,7 +221,10 @@ fn start_message_source(options: &Options, connected_clients_map: ConnectedClien
                     let payload = match decode(msg_to_send.payload) {
                         Ok(p) => p,
                         Err(e) => {
-                            warn!("Failed to decode base64 message: {}", e.to_string());
+                            warn!(
+                                "Failed to decode base64 message: {}",
+                                e.to_string()
+                            );
                             continue;
                         }
                     };
@@ -224,8 +237,8 @@ fn start_message_source(options: &Options, connected_clients_map: ConnectedClien
                             let token = generate_random_token().to_vec();
                             trace!("Message to send is of type request, setting token {:?}", token);
                             token
-                        },
-                        _ => vec![]
+                        }
+                        _ => vec![],
                     };
                     packet.set_token(token.clone());
                     packet.set_path(&msg_to_send.path);
@@ -242,7 +255,9 @@ fn start_message_source(options: &Options, connected_clients_map: ConnectedClien
                     };
                     let connected_clients_map =
                         connected_clients_map.read().await;
-                    let connected_client_entry = match connected_clients_map.get(&cn) {
+                    let connected_client_entry = match connected_clients_map
+                        .get(&cn)
+                    {
                         Some(write_tx) => write_tx,
                         None => {
                             warn!("Client with CN {} is not connected", cn);
@@ -250,16 +265,26 @@ fn start_message_source(options: &Options, connected_clients_map: ConnectedClien
                         }
                     };
                     if !token.is_empty() {
-                        connected_client_entry.request_response_map.lock().await.insert(token.clone(), msg_to_send.path.clone());
+                        connected_client_entry
+                            .request_response_map
+                            .lock()
+                            .await
+                            .insert(token.clone(), msg_to_send.path.clone());
                     }
-                    if let Err(e) = connected_client_entry.write_tx.send(packet).await {
+                    if let Err(e) =
+                        connected_client_entry.write_tx.send(packet).await
+                    {
                         warn!(
                             "Failed to send the message to the device {}: {}",
                             cn,
                             e.to_string()
                         );
                         if !token.is_empty() {
-                            connected_client_entry.request_response_map.lock().await.remove(&token.to_vec());
+                            connected_client_entry
+                                .request_response_map
+                                .lock()
+                                .await
+                                .remove(&token.to_vec());
                         }
                     }
                 }
@@ -271,16 +296,12 @@ fn start_message_source(options: &Options, connected_clients_map: ConnectedClien
                     continue;
                 }
                 Err(e) => {
-                    warn!(
-                        "Failed run blocking closure: {}",
-                        e.to_string()
-                    );
+                    warn!("Failed run blocking closure: {}", e.to_string());
                     continue;
                 }
             }
         }
     });
-
 }
 
 fn load_certs(path: &Path) -> ResultCoapProxy<Vec<Certificate>> {
@@ -301,6 +322,6 @@ fn load_keys(path: &Path) -> ResultCoapProxy<Vec<PrivateKey>> {
     })
 }
 
-pub fn generate_random_token() -> [u8;4] {
-    rand::random::<[u8;4]>()
+pub fn generate_random_token() -> [u8; 4] {
+    rand::random::<[u8; 4]>()
 }
