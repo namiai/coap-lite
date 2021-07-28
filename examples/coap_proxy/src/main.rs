@@ -5,6 +5,7 @@ mod client_connection;
 mod error;
 mod message_sink;
 mod message_source;
+mod connected_clients_tracker;
 
 use argh::FromArgs;
 use base64::decode;
@@ -15,7 +16,6 @@ use std::fs::File;
 use std::io::BufReader;
 use std::net::ToSocketAddrs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc::Sender;
@@ -35,6 +35,7 @@ use crate::error::CoapProxyError;
 use crate::message_sink::RedisMessageSink;
 use crate::message_source::MessageSource;
 use crate::message_source::RedisMessageSource;
+use crate::connected_clients_tracker::ConnectedClientsTracker;
 
 extern crate redis;
 
@@ -93,36 +94,8 @@ async fn main() -> ResultCoapProxy<()> {
         .map_err(|_| CoapProxyError::AddrNotAvailable)?
         .next()
         .ok_or_else(|| CoapProxyError::AddrNotAvailable)?;
-    let certs = load_certs(&options.cert)?;
-    let ca_certs = load_certs(&options.ca)?;
-    let mut keys = load_keys(&options.key)?;
 
-    let mut certs_store = RootCertStore::empty();
-    for cert in &certs {
-        certs_store
-            .add(cert)
-            .expect("Cannot add certificate to the certs store");
-    }
-    for cert in &ca_certs {
-        certs_store
-            .add(cert)
-            .expect("Cannot add certificate to the certs store");
-    }
-    // let banlist_checker = StaticBanListChecker::new(vec!["device1", "device2"]);
-    let banlist_checker = RedisBanListChecker::new(&options.banlist_redis_url)
-        .expect("Failed to create redis ban list checker");
-    let mut config = ServerConfig::new(
-        AllowAuthenticatedClientsWithNotBannedCertificates::new(
-            certs_store,
-            banlist_checker,
-        ),
-    );
-    config.set_single_cert(certs, keys.remove(0)).map_err(|_| {
-        CoapProxyError::InvalidCommandLineParameter(
-            "certificate or keys".to_string(),
-        )
-    })?;
-
+    let config = create_tls_config(&options).expect("Failed to create TLS config");
     let acceptor = TlsAcceptor::from(Arc::new(config));
 
     let listener = TcpListener::bind(&addr)
@@ -132,25 +105,24 @@ async fn main() -> ResultCoapProxy<()> {
     let sink = Arc::new(
         RedisMessageSink::new(&options.sink_redis_url, "from_device")
             .expect("Failed to create redis message sink"),
-        // DevNullMessageSink::new()
     );
 
+    // Keeps the mapping between the client common name and the connection handles
     let connected_clients_map: ConnectedClientsMap =
         Arc::new(RwLock::new(HashMap::new()));
-    let connected_clients_cnt = Arc::new(AtomicU64::new(0));
+    // helper var to keep the number of connected clients
+    let connected_clients_tracker = Arc::new(ConnectedClientsTracker::new());
 
     start_message_source(&options, connected_clients_map.clone());
     info!("Proxy started");
     loop {
         let connected_clients_map = connected_clients_map.clone();
-        let connected_clients_cnt = connected_clients_cnt.clone();
+        let connected_clients_tracker = connected_clients_tracker.clone();
         let (stream, _) = listener
             .accept()
             .await
             .map_err(|e| CoapProxyError::AcceptingConnectionError(e))?;
-        let clients_cnt = connected_clients_cnt
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        info!("Accepted connection, total clients {}", clients_cnt + 1);
+        connected_clients_tracker.record_client_connected();
         let acceptor = acceptor.clone();
         let sink = sink.clone();
         tokio::spawn(async move {
@@ -186,16 +158,44 @@ async fn main() -> ResultCoapProxy<()> {
                     }
                     Err(e) => warn!("Error during the stream handling: {}", e),
                 }
-                let clients_cnt = connected_clients_cnt
-                    .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-                info!(
-                    "Client disconnected, total clients {}",
-                    clients_cnt - 1
-                );
+                connected_clients_tracker.record_client_disconnected();
                 connected_clients_map.write().await.remove(&cn);
             }
         });
     }
+}
+
+/// Loads keys / certificates and creates TLS config
+fn create_tls_config(options: &Options) -> ResultCoapProxy<ServerConfig> {
+    let certs = load_certs(&options.cert)?;
+    let ca_certs = load_certs(&options.ca)?;
+    let mut keys = load_keys(&options.key)?;
+
+    let mut certs_store = RootCertStore::empty();
+    for cert in &certs {
+        certs_store
+            .add(cert)
+            .expect("Cannot add certificate to the certs store");
+    }
+    for cert in &ca_certs {
+        certs_store
+            .add(cert)
+            .expect("Cannot add certificate to the certs store");
+    }
+    let banlist_checker = RedisBanListChecker::new(&options.banlist_redis_url)
+        .expect("Failed to create redis ban list checker");
+    let mut config = ServerConfig::new(
+        AllowAuthenticatedClientsWithNotBannedCertificates::new(
+            certs_store,
+            banlist_checker,
+        ),
+    );
+    config.set_single_cert(certs, keys.remove(0)).map_err(|_| {
+        CoapProxyError::InvalidCommandLineParameter(
+            "certificate or keys".to_string(),
+        )
+    })?;
+   Ok(config)
 }
 
 fn start_message_source(
