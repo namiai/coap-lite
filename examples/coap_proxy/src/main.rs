@@ -2,15 +2,14 @@ mod banlist_checker;
 mod certificate;
 mod client_cert_verifier;
 mod client_connection;
+mod connected_clients_tracker;
 mod error;
 mod message_sink;
 mod message_source;
-mod connected_clients_tracker;
+mod to_device_message_fetcher;
 
 use argh::FromArgs;
-use base64::decode;
 use client_connection::RequestResponseMap;
-use coap_lite::{MessageClass, Packet, PacketTcp};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
@@ -31,11 +30,10 @@ use client_cert_verifier::AllowAuthenticatedClientsWithNotBannedCertificates;
 
 use crate::certificate::extract_cn_from_presented_certificates;
 use crate::client_connection::ClientConnection;
+use crate::connected_clients_tracker::ConnectedClientsTracker;
 use crate::error::CoapProxyError;
 use crate::message_sink::RedisMessageSink;
-use crate::message_source::MessageSource;
-use crate::message_source::RedisMessageSource;
-use crate::connected_clients_tracker::ConnectedClientsTracker;
+use crate::to_device_message_fetcher::ToDeviceMessageFetcher;
 
 extern crate redis;
 
@@ -75,7 +73,7 @@ struct Options {
 }
 
 type ResultCoapProxy<T> = std::result::Result<T, CoapProxyError>;
-struct ConnectedClientEntry {
+pub struct ConnectedClientEntry {
     write_tx: Sender<Vec<u8>>,
     request_response_map: Arc<Mutex<RequestResponseMap>>,
 }
@@ -95,7 +93,8 @@ async fn main() -> ResultCoapProxy<()> {
         .next()
         .ok_or_else(|| CoapProxyError::AddrNotAvailable)?;
 
-    let config = create_tls_config(&options).expect("Failed to create TLS config");
+    let config =
+        create_tls_config(&options).expect("Failed to create TLS config");
     let acceptor = TlsAcceptor::from(Arc::new(config));
 
     let listener = TcpListener::bind(&addr)
@@ -113,8 +112,12 @@ async fn main() -> ResultCoapProxy<()> {
     // helper var to keep the number of connected clients
     let connected_clients_tracker = Arc::new(ConnectedClientsTracker::new());
 
-    start_message_source(&options, connected_clients_map.clone());
+    let to_device_message_fetcher =
+        ToDeviceMessageFetcher::new(&options.source_redis_url);
+    to_device_message_fetcher
+        .start_fetching_messages(connected_clients_map.clone());
     info!("Proxy started");
+    // block the second connection using the same CN
     loop {
         let connected_clients_map = connected_clients_map.clone();
         let connected_clients_tracker = connected_clients_tracker.clone();
@@ -195,113 +198,7 @@ fn create_tls_config(options: &Options) -> ResultCoapProxy<ServerConfig> {
             "certificate or keys".to_string(),
         )
     })?;
-   Ok(config)
-}
-
-fn start_message_source(
-    options: &Options,
-    connected_clients_map: ConnectedClientsMap,
-) {
-    let source = Arc::new(
-        RedisMessageSource::new(&options.source_redis_url, "to_device")
-            .expect("Failed to create redis message source"),
-    );
-    tokio::spawn(async move {
-        loop {
-            let source = source.clone();
-            match tokio::task::spawn_blocking(move || {
-                source.fetch_new_message()
-            })
-            .await
-            {
-                Ok(Ok(msg_to_send)) => {
-                    let mut packet: PacketTcp = PacketTcp::new();
-                    let cn = msg_to_send.cn;
-                    packet.set_code(&msg_to_send.code);
-                    let payload = match decode(msg_to_send.payload) {
-                        Ok(p) => p,
-                        Err(e) => {
-                            warn!(
-                                "Failed to decode base64 message: {}",
-                                e.to_string()
-                            );
-                            continue;
-                        }
-                    };
-
-                    // Token is set only when we need to forward the request
-                    // Response will go as is.
-                    // Token will be later used to fetch the endpoint request was sent to
-                    let token = match packet.get_message_class() {
-                        MessageClass::Request(_) => {
-                            let token = generate_random_token().to_vec();
-                            trace!("Message to send is of type request, setting token {:?}", token);
-                            token
-                        }
-                        _ => vec![],
-                    };
-                    packet.set_token(token.clone());
-                    packet.set_path(&msg_to_send.path);
-                    packet.set_payload(payload);
-                    let packet = match packet.to_bytes() {
-                        Ok(bytes) => bytes,
-                        Err(e) => {
-                            warn!(
-                                "Failed to convert the packet to bytes: {}",
-                                e.to_string()
-                            );
-                            continue;
-                        }
-                    };
-                    let connected_clients_map =
-                        connected_clients_map.read().await;
-                    let connected_client_entry = match connected_clients_map
-                        .get(&cn)
-                    {
-                        Some(write_tx) => write_tx,
-                        None => {
-                            warn!("Client with CN {} is not connected", cn);
-                            continue;
-                        }
-                    };
-                    if !token.is_empty() {
-                        connected_client_entry
-                            .request_response_map
-                            .lock()
-                            .await
-                            .insert(token.clone(), msg_to_send.path.clone());
-                    }
-                    if let Err(e) =
-                        connected_client_entry.write_tx.send(packet).await
-                    {
-                        warn!(
-                            "Failed to send the message to the device {}: {}",
-                            cn,
-                            e.to_string()
-                        );
-                        if !token.is_empty() {
-                            connected_client_entry
-                                .request_response_map
-                                .lock()
-                                .await
-                                .remove(&token.to_vec());
-                        }
-                    }
-                }
-                Ok(Err(e)) => {
-                    warn!(
-                        "Failed to get message from source: {}",
-                        e.to_string()
-                    );
-                    continue;
-                }
-                Err(e) => {
-                    warn!("Failed run blocking closure: {}", e.to_string());
-                    continue;
-                }
-            }
-        }
-    });
+    Ok(config)
 }
 
 fn load_certs(path: &Path) -> ResultCoapProxy<Vec<Certificate>> {
