@@ -1,7 +1,7 @@
 use chrono::Utc;
 use coap_lite::{
-    CoapRequest, MessageError, ObserveOption, Packet, PacketTcp,
-    RequestType, CoapMessageExt
+    CoapMessageExt, CoapRequest, MessageError, ObserveOption, Packet,
+    PacketTcp, RequestType,
 };
 use std::io::BufReader;
 use std::net::{SocketAddr, TcpStream};
@@ -50,20 +50,18 @@ fn main() {
     tls.read_to_end(&mut plaintext).unwrap();
     stdout().write_all(&plaintext).unwrap();
 
-    let mut request: CoapRequest<PacketTcp> = CoapRequest::new(RequestType::Get);
+    let mut request: CoapRequest<PacketTcp> =
+        CoapRequest::new(RequestType::Get);
 
     request.set_path("/test");
-    request.message.set_token(vec![0x7d, 0x34]);
-    request
-        .message
-        .set_observe(vec![ObserveOption::Register as u8]);
+    request.set_token(vec![0x7d, 0x34]);
+    request.set_observe_flag(ObserveOption::Register);
     let current_time = Utc::now().to_rfc2822();
     request
-        .message
         .set_payload(current_time.as_bytes().to_vec());
     let mut stream = TcpStream::connect("127.0.0.1:5683").unwrap();
 
-    let packet = request.message.to_bytes().unwrap();
+    let packet = request.to_bytes().unwrap();
     println!("Packet {:?}", packet);
     stream.write(&packet[..]).expect("Could not send the data");
     let mut reader = BufReader::new(stream.try_clone().unwrap());

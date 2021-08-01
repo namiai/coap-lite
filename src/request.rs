@@ -1,4 +1,4 @@
-use crate::CoapMessageExt;
+use crate::{CoapMessageExt, PacketUdp};
 
 use super::{
     packet::{ObserveOption, Packet},
@@ -89,6 +89,17 @@ impl<T: Packet> CoapRequest<T> {
     pub fn set_token(&mut self, token: Vec<u8>) {
         self.message.set_token(token)
     }
+
+    pub fn set_message_id(&mut self, message_id: u16) {
+       self.message.set_message_id(message_id)
+    }
+
+}
+
+impl CoapRequest<PacketUdp> {
+    pub fn set_type(&mut self, message_type: MessageType) {
+        self.message.set_type(message_type);
+    }
 }
 
 #[cfg(test)]
@@ -97,6 +108,7 @@ mod test {
     use crate::PacketTcp;
     use crate::PacketUdp;
     use crate::ResponseType;
+    use crate::CoapOption;
 
     #[test]
     fn test_creation_from_packet() {

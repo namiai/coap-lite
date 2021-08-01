@@ -1,6 +1,6 @@
 use coap_lite::{
-    CoapOption, CoapRequest, CoapResponse, CoapSignal, MessageClass, Packet,
-    PacketTcp, RequestType, SignalType, CoapMessageExt
+    CoapMessageExt, CoapOption, CoapRequest, CoapResponse, CoapSignal,
+    MessageClass, Packet, PacketTcp, RequestType, SignalType,
 };
 use std::io::{BufReader, Read, Write};
 use std::net::TcpListener;
@@ -141,10 +141,11 @@ fn send_pong(stream: &mut impl Write) {
 }
 
 fn send_test_get(stream: &mut impl Write) {
-    let mut request: CoapRequest<PacketTcp> = CoapRequest::new(RequestType::Get);
+    let mut request: CoapRequest<PacketTcp> =
+        CoapRequest::new(RequestType::Get);
     request.set_path("/motion");
     stream
-        .write_all(&request.message.to_bytes().unwrap()[..])
+        .write_all(&request.to_bytes().unwrap()[..])
         .unwrap();
 }
 
