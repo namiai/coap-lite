@@ -337,6 +337,7 @@ impl PacketTcp {
 
     fn encode_length(length: usize) -> Result<(u8, Vec<u8>), MessageError> {
         match length {
+            l if l > usize::MAX => Err(MessageError::InvalidPacketLength),
             l @ 0..=12 => {
                 Ok((l.to_be_bytes().last().copied().unwrap(), Vec::new()))
             }
@@ -345,12 +346,18 @@ impl PacketTcp {
                 let extension = (l - 13).to_be_bytes().to_vec();
                 Ok((base, extension[extension.len() - 1..].to_vec()))
             }
-            l @ 269..=65804 => {
+            l @ 269..=65_804 => {
                 let base = 14_u8;
                 let extension = (l - 269).to_be_bytes().to_vec();
                 Ok((base, extension[extension.len() - 2..].to_vec()))
             }
-            l @ 65805..=4_295_033_100 => {
+            l @ 65_805..=usize::MAX => {
+                #[cfg(target_pointer_width = "64")]
+                {
+                    if l > 4_295_033_100 {
+                        return Err(MessageError::InvalidPacketLength)
+                    }
+                }
                 let base = 15_u8;
                 let extension = (l - 65805).to_be_bytes().to_vec();
                 Ok((base, extension[extension.len() - 4..].to_vec()))
@@ -358,6 +365,7 @@ impl PacketTcp {
             _ => Err(MessageError::InvalidPacketLength),
         }
     }
+
 
     pub fn check_buf(buf: &[u8]) -> Option<usize> {
         let mut total_bytes_in_packet:usize = 0;
