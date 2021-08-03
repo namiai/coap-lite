@@ -115,10 +115,10 @@ impl<'a, S: MessageSink<PacketTcp>> ClientConnection<'a, S> {
         let mut request: CoapRequest<PacketTcp> =
             CoapRequest::new(RequestType::Get);
         let token = generate_random_token();
-        let path = "/motion";
+        let path = "/sensing";
         request.set_token(token.into());
-        request.set_path("/motion");
-        // request.set_observe_flag(coap_lite::ObserveOption::Register);
+        request.set_path(path);
+        request.set_observe_flag(coap_lite::ObserveOption::Register);
         let bytes = request.to_bytes().expect(&format!(
             "Cannot encode CoAP message as bytes {:?}",
             request
