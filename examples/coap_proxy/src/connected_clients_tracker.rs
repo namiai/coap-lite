@@ -45,6 +45,20 @@ impl ConnectedClientsTracker {
         debug!("Client connected, connected count: {}", old_value + 1);
     }
 
+    pub async fn record_client_disconnected(
+        &mut self,
+        cn: &str,
+        session_id: [u8; 32],
+    ) {
+        let old_value = self
+            .connected_clients_cnt
+            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+        self.remove_record_from_connected_clients(cn, session_id).await;
+        debug!("Client disconnected, connected count: {}", old_value - 1);
+    }
+}
+
+impl ConnectedClientsTracker {
     async fn add_record_to_connected_clients(
         &mut self,
         cn: &str,
@@ -58,17 +72,6 @@ impl ConnectedClientsTracker {
         }
     }
 
-    pub async fn record_client_disconnected(
-        &mut self,
-        cn: &str,
-        session_id: [u8; 32],
-    ) {
-        let old_value = self
-            .connected_clients_cnt
-            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-        self.remove_record_from_connected_clients(cn, session_id).await;
-        debug!("Client disconnected, connected count: {}", old_value - 1);
-    }
 
     async fn remove_record_from_connected_clients(
         &mut self,
