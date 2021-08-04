@@ -43,8 +43,9 @@ pub struct RedisMessageSource {
     key_name: String,
 }
 
+/// Message source powered by redis
+/// LPOPs the data from the key defined during the init
 impl RedisMessageSource {
-    #[allow(dead_code)]
     pub fn new(
         connection_url: &str,
         key_name: &str,

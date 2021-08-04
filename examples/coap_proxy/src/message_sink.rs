@@ -91,6 +91,8 @@ impl<T> MessageSink<T> for RedisMessageSink
 where
     T: Packet,
 {
+    // the code is synchronous!
+    // consider calling it from the blocking tokio task or move to asynchronous version of redis client
     fn process_incoming_message(
         &self,
         message: T,
