@@ -19,6 +19,12 @@ use crate::{
     ResultCoapProxy,
 };
 
+/// Helper structure to get the path the request was made to on receiving the response
+/// Easier to explain on example:
+/// 1. Proxy receives the message to send to device to the path "/status"
+/// 2. Proxy assigns random token to the request and sends it to the device
+/// 3. Device replies and includes token in the response but doesn't include the path in the headers
+/// 4. Proxy fetches the path based on the provided token
 pub type RequestResponseMap = HashMap<Vec<u8>, String>;
 
 #[allow(dead_code)]
