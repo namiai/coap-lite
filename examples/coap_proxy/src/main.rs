@@ -9,15 +9,12 @@ mod message_source;
 mod to_device_message_fetcher;
 
 use argh::FromArgs;
-use client_connection::RequestResponseMap;
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::net::ToSocketAddrs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tokio::sync::mpsc::Sender;
 use tokio::sync::*;
 use tokio_rustls::rustls::internal::pemfile::{certs, pkcs8_private_keys};
 use tokio_rustls::rustls::RootCertStore;
@@ -30,7 +27,9 @@ use client_cert_verifier::AllowAuthenticatedClientsWithNotBannedCertificates;
 
 use crate::certificate::extract_cn_from_presented_certificates;
 use crate::client_connection::ClientConnection;
-use crate::connected_clients_tracker::ConnectedClientsTracker;
+use crate::connected_clients_tracker::{
+    ConnectedClientEntry, ConnectedClientsTracker,
+};
 use crate::error::CoapProxyError;
 use crate::message_sink::RedisMessageSink;
 use crate::to_device_message_fetcher::ToDeviceMessageFetcher;
@@ -74,16 +73,6 @@ struct Options {
 
 type ResultCoapProxy<T> = std::result::Result<T, CoapProxyError>;
 
-#[derive(Debug)]
-pub struct ConnectedClientEntry {
-    write_tx: Sender<Vec<u8>>,
-    shutdown_tx: Sender<()>,
-    request_response_map: Arc<Mutex<RequestResponseMap>>,
-    session_id: [u8;32],
-}
-
-type ConnectedClientsMap = Arc<RwLock<HashMap<String, ConnectedClientEntry>>>;
-
 #[tokio::main]
 async fn main() -> ResultCoapProxy<()> {
     env_logger::init();
@@ -110,25 +99,21 @@ async fn main() -> ResultCoapProxy<()> {
             .expect("Failed to create redis message sink"),
     );
 
-    // Keeps the mapping between the client common name and the connection handles
-    let connected_clients_map: ConnectedClientsMap =
-        Arc::new(RwLock::new(HashMap::new()));
     // helper var to keep the number of connected clients
-    let connected_clients_tracker = Arc::new(ConnectedClientsTracker::new());
+    let connected_clients_tracker =
+        Arc::new(RwLock::new(ConnectedClientsTracker::new()));
 
     let to_device_message_fetcher =
         ToDeviceMessageFetcher::new(&options.source_redis_url);
     to_device_message_fetcher
-        .start_fetching_messages(connected_clients_map.clone());
+        .start_fetching_messages(connected_clients_tracker.clone());
     info!("Proxy started");
     loop {
-        let connected_clients_map = connected_clients_map.clone();
         let connected_clients_tracker = connected_clients_tracker.clone();
         let (stream, _) = listener
             .accept()
             .await
             .map_err(|e| CoapProxyError::AcceptingConnectionError(e))?;
-        connected_clients_tracker.record_client_connected();
         let acceptor = acceptor.clone();
         let sink = sink.clone();
         tokio::spawn(async move {
@@ -148,49 +133,41 @@ async fn main() -> ResultCoapProxy<()> {
                 // disconnect_existing_clients_with_the_same_cn(&connected_clients_map, &cn).await;
                 let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>(30);
                 let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>(1);
-                let mut client_connection =
-                    ClientConnection::new(write_tx.clone(), shutdown_tx.clone(), &cn, &sink);
-                let session_id:[u8;32] = rand::random();
+                let mut client_connection = ClientConnection::new(
+                    write_tx.clone(),
+                    shutdown_tx.clone(),
+                    &cn,
+                    &sink,
+                );
+                let session_id: [u8; 32] = rand::random();
                 let connected_client_entry = ConnectedClientEntry {
                     write_tx: write_tx.clone(),
                     shutdown_tx: shutdown_tx.clone(),
                     request_response_map: client_connection
                         .request_response_map
                         .clone(),
-                    session_id
+                    session_id,
                 };
-                record_connected_client(&connected_clients_map, &cn, connected_client_entry).await;
-                match client_connection.process_stream(stream, write_rx, shutdown_rx).await
+                connected_clients_tracker
+                    .write()
+                    .await
+                    .record_client_connected(&cn, connected_client_entry).await;
+                match client_connection
+                    .process_stream(stream, write_rx, shutdown_rx)
+                    .await
                 {
                     Ok(_) => {
                         debug!("Shutdowning stream");
                     }
                     Err(e) => warn!("Error during the stream handling: {}", e),
                 }
-                connected_clients_tracker.record_client_disconnected();
-                remove_record_from_connected_clients(&connected_clients_map, &cn, session_id).await;
+                connected_clients_tracker
+                    .write()
+                    .await
+                    .record_client_disconnected(&cn, session_id)
+                    .await;
             }
         });
-    }
-
-}
-
-async fn remove_record_from_connected_clients(connected_clients_map: &ConnectedClientsMap, cn:&str, session_id: [u8;32]) {
-    let mut connected_clients_map = connected_clients_map.write().await;
-    if let Some(entry) = connected_clients_map.get(cn) {
-        if entry.session_id == session_id {
-            connected_clients_map.remove(cn);
-        }
-    }
-}
-
-async fn record_connected_client(connected_clients_map: &ConnectedClientsMap, cn: &str, connected_client_entry: ConnectedClientEntry) {
-    let mut connected_clients_map = connected_clients_map
-        .write()
-        .await;
-    let existing_record = connected_clients_map.insert(cn.to_owned(), connected_client_entry);
-    if let Some(v) = existing_record {
-        let _ = v.shutdown_tx.send(()).await;
     }
 }
 

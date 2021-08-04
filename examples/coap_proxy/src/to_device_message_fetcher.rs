@@ -4,11 +4,11 @@ use base64::decode;
 use coap_lite::{MessageClass, Packet, PacketTcp};
 
 use crate::{
+    connected_clients_tracker::ConnectedClientsTracker,
     generate_random_token,
     message_source::{MessageSource, MessageToDevice, RedisMessageSource},
-    ConnectedClientsMap,
 };
-use tokio;
+use tokio::{self, sync::RwLock};
 
 pub struct ToDeviceMessageFetcher<T>
 where
@@ -34,7 +34,7 @@ impl<T: MessageSource + Send + Sync + 'static> ToDeviceMessageFetcher<T> {
     ///
     pub fn start_fetching_messages(
         &self,
-        connected_clients_map: ConnectedClientsMap,
+        connected_clients_tracker: Arc<RwLock<ConnectedClientsTracker>>,
     ) {
         debug!("Starting message source");
         let source = self.message_source.clone();
@@ -45,8 +45,7 @@ impl<T: MessageSource + Send + Sync + 'static> ToDeviceMessageFetcher<T> {
                 // doesn't block other tokio tsks
                 match tokio::task::block_in_place(move || {
                     source.fetch_new_message()
-                })
-                {
+                }) {
                     Ok(msg_to_send) => {
                         let cn = &msg_to_send.cn;
                         let packet =
@@ -65,8 +64,10 @@ impl<T: MessageSource + Send + Sync + 'static> ToDeviceMessageFetcher<T> {
                                 continue;
                             }
                         };
-                        let connected_clients_map =
-                            connected_clients_map.read().await;
+                        let connected_clients_map = &connected_clients_tracker
+                            .read()
+                            .await
+                            .connected_clients_map;
                         let connected_client_entry =
                             match connected_clients_map.get(cn) {
                                 Some(write_tx) => write_tx,

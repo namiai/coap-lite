@@ -6,7 +6,12 @@ use std::{
     collections::{HashMap, LinkedList},
     sync::Arc,
 };
-use tokio::{io::{split, AsyncReadExt, AsyncWriteExt}, net::TcpStream, sync::Mutex, sync::mpsc::{Receiver, Sender}};
+use tokio::{
+    io::{split, AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+    sync::mpsc::{Receiver, Sender},
+    sync::Mutex,
+};
 use tokio_rustls::server::TlsStream;
 
 use crate::{
@@ -15,6 +20,7 @@ use crate::{
 };
 
 pub type RequestResponseMap = HashMap<Vec<u8>, String>;
+
 pub struct ClientConnection<'a, S: MessageSink<PacketTcp>> {
     pub request_response_map: Arc<Mutex<RequestResponseMap>>,
     write_tx: Sender<Vec<u8>>,
