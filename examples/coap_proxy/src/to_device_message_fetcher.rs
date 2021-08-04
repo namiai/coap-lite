@@ -43,12 +43,11 @@ impl<T: MessageSource + Send + Sync + 'static> ToDeviceMessageFetcher<T> {
                 let source = source.clone();
                 // fetch_new_message is not async so making sure that the task
                 // doesn't block other tokio tsks
-                match tokio::task::spawn_blocking(move || {
+                match tokio::task::block_in_place(move || {
                     source.fetch_new_message()
                 })
-                .await
                 {
-                    Ok(Ok(msg_to_send)) => {
+                    Ok(msg_to_send) => {
                         let cn = &msg_to_send.cn;
                         let packet =
                             match create_packet_from_message(&msg_to_send) {
@@ -109,16 +108,9 @@ impl<T: MessageSource + Send + Sync + 'static> ToDeviceMessageFetcher<T> {
                             }
                         }
                     }
-                    Ok(Err(e)) => {
-                        warn!(
-                            "Failed to get message from source: {}",
-                            e.to_string()
-                        );
-                        continue;
-                    }
                     Err(e) => {
                         warn!(
-                            "Failed run blocking closure: {}",
+                            "Failed to get message from source: {}",
                             e.to_string()
                         );
                         continue;
