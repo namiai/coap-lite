@@ -21,6 +21,7 @@ use crate::{
 
 pub type RequestResponseMap = HashMap<Vec<u8>, String>;
 
+#[allow(dead_code)]
 pub struct ClientConnection<'a, S: MessageSink<PacketTcp>> {
     pub request_response_map: Arc<Mutex<RequestResponseMap>>,
     write_tx: Sender<Vec<u8>>,
@@ -63,7 +64,7 @@ impl<'a, S: MessageSink<PacketTcp>> ClientConnection<'a, S> {
                 // Shutdown -- doesn't matter what message come in, we just exit the loop and shutdown the stream
                 // Data to write -- contains vec of u8 values to be written to the channel
                 //
-                // Select should be biased because we prioritize channel control messages over data
+                // Select should be biased because we prioritize control messages over data
                 //
                 tokio::select! {
                     biased;
@@ -94,29 +95,53 @@ impl<'a, S: MessageSink<PacketTcp>> ClientConnection<'a, S> {
             }
             Ok(())
         });
+        // hardcoded for now, CSM message to indicate the capabilities of the server (e.g max message size)
         self.send_csm().await?;
+        // used during the development only:
+        // send the observe message to ask the device to start reporting motion events and statistics
         self.send_motion_observe().await?;
+
+        // Actual stream reading code
+        //
+        // We start with a small buffer and most likely it will be enough for our case
         let mut buf = vec![0; 1024];
+        // Cursor keeps track on the position of the last filled byte in the buffer
         let mut cursor = 0;
         loop {
+            // self-explanatory -- in case we reached the buffer limit -> increase it and fill with 0's
+            // That could be optimized with "bytes" crate to avoid filling the new memory with 0's,
+            // but it's probably too early to bother about such things
             if cursor == buf.len() {
                 buf.resize(cursor * 2, 0)
             }
+            // trying to parse the header of the packet obtain the size we need to read from buffer
             match PacketTcp::check_buf(&buf[..]) {
+                // alright, packet seems to be incoming, next thing to check if we received it in full or not yet
                 Some(packet_bytes_count) if (cursor >= packet_bytes_count) => {
+                    // if yes, drain packet bytes from the buffer
                     let packet_bytes: Vec<u8> =
                         buf.drain(..packet_bytes_count).collect();
-                    self.process_incoming_packet(packet_bytes).await?;
+                    // adjust the cursors
                     cursor -= packet_bytes_count;
+                    // and process incoming packet
+                    self.process_incoming_packet(packet_bytes).await?;
+                    // we need to go to the beginning of the loop here because
+                    // buffer may contain more messages that have been received but not yet processed
+                    // need to deal with them first before reading from stream again
                     continue;
                 }
                 _ => {}
             };
+            // reading from stream into the buffer, asynchronously
+            // Error may happen if say the stream is closed already
+            // nothing else we can do, need to exist the function
             let bytes_read = read_half
                 .read(&mut buf[cursor..])
                 .await
                 .map_err(|_| CoapProxyError::StreamReadError)?;
+            // advance the cursor
             cursor += bytes_read;
+            // and if nothing has been read -> stream is closed -> exit the function
             if bytes_read == 0 {
                 debug!("Shutting down the stream");
                 break;

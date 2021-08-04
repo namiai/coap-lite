@@ -99,7 +99,6 @@ async fn main() -> ResultCoapProxy<()> {
             .expect("Failed to create redis message sink"),
     );
 
-    // helper var to keep the number of connected clients
     let connected_clients_tracker =
         Arc::new(RwLock::new(ConnectedClientsTracker::new()));
 
@@ -107,6 +106,7 @@ async fn main() -> ResultCoapProxy<()> {
         ToDeviceMessageFetcher::new(&options.source_redis_url);
     to_device_message_fetcher
         .start_fetching_messages(connected_clients_tracker.clone());
+
     info!("Proxy started");
     loop {
         let connected_clients_tracker = connected_clients_tracker.clone();
@@ -130,7 +130,6 @@ async fn main() -> ResultCoapProxy<()> {
                     }
                 };
                 debug!("Incoming connection from client with CN {}", cn);
-                // disconnect_existing_clients_with_the_same_cn(&connected_clients_map, &cn).await;
                 let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>(30);
                 let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>(1);
                 let mut client_connection = ClientConnection::new(

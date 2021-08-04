@@ -1,10 +1,9 @@
 use std::{
     collections::HashMap,
-    sync::{atomic::AtomicU64, Arc},
+    sync::Arc,
 };
-
 use tokio::sync::{mpsc::Sender, Mutex};
-
+use hex_fmt::HexFmt;
 use crate::client_connection::RequestResponseMap;
 
 #[derive(Debug)]
@@ -17,8 +16,9 @@ pub struct ConnectedClientEntry {
 
 pub type ConnectedClientsMap = HashMap<String, ConnectedClientEntry>;
 
+/// Keeps the association between CN and the stream connection handles
+///
 pub struct ConnectedClientsTracker {
-    connected_clients_cnt: AtomicU64,
     pub connected_clients_map: ConnectedClientsMap,
 }
 
@@ -28,7 +28,6 @@ impl ConnectedClientsTracker {
         let connected_clients_map: ConnectedClientsMap = HashMap::new();
 
         ConnectedClientsTracker {
-            connected_clients_cnt: AtomicU64::new(0),
             connected_clients_map,
         }
     }
@@ -38,42 +37,18 @@ impl ConnectedClientsTracker {
         cn: &str,
         connected_client_entry: ConnectedClientEntry,
     ) {
-        let old_value = self
-            .connected_clients_cnt
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.add_record_to_connected_clients(cn, connected_client_entry).await;
-        debug!("Client connected, connected count: {}", old_value + 1);
-    }
-
-    pub async fn record_client_disconnected(
-        &mut self,
-        cn: &str,
-        session_id: [u8; 32],
-    ) {
-        let old_value = self
-            .connected_clients_cnt
-            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-        self.remove_record_from_connected_clients(cn, session_id).await;
-        debug!("Client disconnected, connected count: {}", old_value - 1);
-    }
-}
-
-impl ConnectedClientsTracker {
-    async fn add_record_to_connected_clients(
-        &mut self,
-        cn: &str,
-        connected_client_entry: ConnectedClientEntry,
-    ) {
+        let existing_session_id = connected_client_entry.session_id.clone();
         let existing_record = self
             .connected_clients_map
             .insert(cn.to_owned(), connected_client_entry);
         if let Some(v) = existing_record {
+            info!("New client with the same CN {} is connected (existing session id {:10}, new session id {:10}), disconnecting the existing session", cn, HexFmt(existing_session_id), HexFmt(v.session_id));
             let _ = v.shutdown_tx.send(()).await;
         }
+        debug!("Client connected, connected count: {}", self.connected_clients_map.keys().len());
     }
 
-
-    async fn remove_record_from_connected_clients(
+    pub async fn record_client_disconnected(
         &mut self,
         cn: &str,
         session_id: [u8; 32],
@@ -83,5 +58,6 @@ impl ConnectedClientsTracker {
                 self.connected_clients_map.remove(cn);
             }
         }
+        debug!("Client disconnected, connected count: {}", self.connected_clients_map.keys().len());
     }
 }

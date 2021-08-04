@@ -10,6 +10,8 @@ use crate::{
 };
 use tokio::{self, sync::RwLock};
 
+/// Helper struct to assist with fetching data from message source and pushing it to the connected devices
+///
 pub struct ToDeviceMessageFetcher<T>
 where
     T: MessageSource + Send + Sync + 'static,
@@ -42,7 +44,7 @@ impl<T: MessageSource + Send + Sync + 'static> ToDeviceMessageFetcher<T> {
             loop {
                 let source = source.clone();
                 // fetch_new_message is not async so making sure that the task
-                // doesn't block other tokio tsks
+                // doesn't block other tokio tasks
                 match tokio::task::block_in_place(move || {
                     source.fetch_new_message()
                 }) {
