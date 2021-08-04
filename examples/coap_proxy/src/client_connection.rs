@@ -6,12 +6,7 @@ use std::{
     collections::{HashMap, LinkedList},
     sync::Arc,
 };
-use tokio::{
-    io::{split, AsyncReadExt, AsyncWriteExt},
-    net::TcpStream,
-    sync::mpsc::{Receiver, Sender},
-    sync::Mutex,
-};
+use tokio::{io::{split, AsyncReadExt, AsyncWriteExt}, net::TcpStream, sync::Mutex, sync::mpsc::{Receiver, Sender}};
 use tokio_rustls::server::TlsStream;
 
 use crate::{
@@ -23,6 +18,7 @@ pub type RequestResponseMap = HashMap<Vec<u8>, String>;
 pub struct ClientConnection<'a, S: MessageSink<PacketTcp>> {
     pub request_response_map: Arc<Mutex<RequestResponseMap>>,
     write_tx: Sender<Vec<u8>>,
+    shutdown_tx: Sender<()>,
     cn: &'a str,
     sink: &'a Arc<S>,
 }
@@ -30,6 +26,7 @@ pub struct ClientConnection<'a, S: MessageSink<PacketTcp>> {
 impl<'a, S: MessageSink<PacketTcp>> ClientConnection<'a, S> {
     pub fn new(
         write_tx: Sender<Vec<u8>>,
+        shutdown_tx: Sender<()>,
         cn: &'a str,
         sink: &'a Arc<S>,
     ) -> ClientConnection<'a, S> {
@@ -37,6 +34,7 @@ impl<'a, S: MessageSink<PacketTcp>> ClientConnection<'a, S> {
             Arc::new(Mutex::new(HashMap::new()));
         ClientConnection {
             write_tx,
+            shutdown_tx,
             request_response_map,
             cn,
             sink,
@@ -46,25 +44,46 @@ impl<'a, S: MessageSink<PacketTcp>> ClientConnection<'a, S> {
         &mut self,
         stream: TlsStream<TcpStream>,
         write_rx: Receiver<Vec<u8>>,
+        shutdown_rx: Receiver<()>,
     ) -> ResultCoapProxy<()> {
         let (mut read_half, write_half) = split(stream);
         let mut write_rx = write_rx;
+        let mut shutdown_rx = shutdown_rx;
+        let cn = self.cn.to_string();
         tokio::spawn(async move {
             let mut write_half = write_half;
             loop {
-                if let Some(data) = write_rx.recv().await {
-                    debug!("Writing the data to the stream {:?}", data);
-                    if let Err(_) = write_half.write_all(&data).await {
+                // There are 2 channels we look at:
+                // Shutdown -- doesn't matter what message come in, we just exit the loop and shutdown the stream
+                // Data to write -- contains vec of u8 values to be written to the channel
+                //
+                // Select should be biased because we prioritize channel control messages over data
+                //
+                tokio::select! {
+                    biased;
+                    _ = shutdown_rx.recv() => {
+                        info!("Received shutdown signal for the client with CN {}", cn);
                         let _ = write_half.shutdown().await;
-                        return Err(CoapProxyError::StreamWriteError);
-                    };
-                    write_half
-                        .flush()
-                        .await
-                        .map_err(|_| CoapProxyError::StreamWriteError)?;
-                } else {
-                    let _ = write_half.shutdown().await;
-                    break;
+                        break;
+                    },
+                    dt = write_rx.recv() => {
+                        if let Some(data) = dt {
+                            debug!("Writing the data to the stream {:?}", data);
+                            if let Err(_) = write_half.write_all(&data).await {
+                                let _ = write_half.shutdown().await;
+                                return Err(CoapProxyError::StreamWriteError);
+                            };
+                            write_half
+                                .flush()
+                                .await
+                                .map_err(|_| CoapProxyError::StreamWriteError)?;
+
+                        } else {
+                            let _ = write_half.shutdown().await;
+                            break;
+                        }
+
+                    }
                 }
             }
             Ok(())

@@ -73,9 +73,13 @@ struct Options {
 }
 
 type ResultCoapProxy<T> = std::result::Result<T, CoapProxyError>;
+
+#[derive(Debug)]
 pub struct ConnectedClientEntry {
     write_tx: Sender<Vec<u8>>,
+    shutdown_tx: Sender<()>,
     request_response_map: Arc<Mutex<RequestResponseMap>>,
+    session_id: [u8;32],
 }
 
 type ConnectedClientsMap = Arc<RwLock<HashMap<String, ConnectedClientEntry>>>;
@@ -117,7 +121,6 @@ async fn main() -> ResultCoapProxy<()> {
     to_device_message_fetcher
         .start_fetching_messages(connected_clients_map.clone());
     info!("Proxy started");
-    // block the second connection using the same CN
     loop {
         let connected_clients_map = connected_clients_map.clone();
         let connected_clients_tracker = connected_clients_tracker.clone();
@@ -141,20 +144,23 @@ async fn main() -> ResultCoapProxy<()> {
                         return;
                     }
                 };
+                debug!("Incoming connection from client with CN {}", cn);
+                // disconnect_existing_clients_with_the_same_cn(&connected_clients_map, &cn).await;
                 let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>(30);
+                let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>(1);
                 let mut client_connection =
-                    ClientConnection::new(write_tx.clone(), &cn, &sink);
+                    ClientConnection::new(write_tx.clone(), shutdown_tx.clone(), &cn, &sink);
+                let session_id:[u8;32] = rand::random();
                 let connected_client_entry = ConnectedClientEntry {
                     write_tx: write_tx.clone(),
+                    shutdown_tx: shutdown_tx.clone(),
                     request_response_map: client_connection
                         .request_response_map
                         .clone(),
+                    session_id
                 };
-                connected_clients_map
-                    .write()
-                    .await
-                    .insert(cn.to_owned(), connected_client_entry);
-                match client_connection.process_stream(stream, write_rx).await
+                record_connected_client(&connected_clients_map, &cn, connected_client_entry).await;
+                match client_connection.process_stream(stream, write_rx, shutdown_rx).await
                 {
                     Ok(_) => {
                         debug!("Shutdowning stream");
@@ -162,9 +168,29 @@ async fn main() -> ResultCoapProxy<()> {
                     Err(e) => warn!("Error during the stream handling: {}", e),
                 }
                 connected_clients_tracker.record_client_disconnected();
-                connected_clients_map.write().await.remove(&cn);
+                remove_record_from_connected_clients(&connected_clients_map, &cn, session_id).await;
             }
         });
+    }
+
+}
+
+async fn remove_record_from_connected_clients(connected_clients_map: &ConnectedClientsMap, cn:&str, session_id: [u8;32]) {
+    let mut connected_clients_map = connected_clients_map.write().await;
+    if let Some(entry) = connected_clients_map.get(cn) {
+        if entry.session_id == session_id {
+            connected_clients_map.remove(cn);
+        }
+    }
+}
+
+async fn record_connected_client(connected_clients_map: &ConnectedClientsMap, cn: &str, connected_client_entry: ConnectedClientEntry) {
+    let mut connected_clients_map = connected_clients_map
+        .write()
+        .await;
+    let existing_record = connected_clients_map.insert(cn.to_owned(), connected_client_entry);
+    if let Some(v) = existing_record {
+        let _ = v.shutdown_tx.send(()).await;
     }
 }
 
