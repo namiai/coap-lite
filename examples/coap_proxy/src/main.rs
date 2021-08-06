@@ -90,20 +90,27 @@ async fn main() -> ResultCoapProxy<()> {
 
     let config =
         create_tls_config(&options).expect("Failed to create TLS config");
-    let acceptor = TlsAcceptor::from(Arc::new(config));
 
+    // Acceptor and Listener work together to enable TLS message flow
+    let acceptor = TlsAcceptor::from(Arc::new(config));
     let listener = TcpListener::bind(&addr)
         .await
         .map_err(|_| CoapProxyError::BindError)?;
 
+    // Place where coap proxy will put the incoming messages
+    // and connection events
     let sink = Arc::new(
         RedisMessageSink::new(&options.sink_redis_url, "from_device")
             .expect("Failed to create redis message sink"),
     );
 
+    // Keeps track on number of clients connected,
+    // their respective handles
     let connected_clients_tracker =
         Arc::new(RwLock::new(ConnectedClientsTracker::new()));
 
+    // Fetches the messages from the external source and pushes
+    // them to the TCP streams based on the CN
     let to_device_message_fetcher =
         ToDeviceMessageFetcher::new(&options.source_redis_url);
     to_device_message_fetcher
@@ -120,6 +127,8 @@ async fn main() -> ResultCoapProxy<()> {
         let sink = sink.clone();
         tokio::spawn(async move {
             if let Ok(stream) = acceptor.accept(stream).await {
+                // CN is taken from the certificate data
+                // What if we cannot get one? Then this client should be disconnected
                 let certificates =
                     stream.get_ref().1.get_peer_certificates().unwrap();
                 let cn = match extract_cn_from_presented_certificates(
@@ -132,14 +141,19 @@ async fn main() -> ResultCoapProxy<()> {
                     }
                 };
                 debug!("Incoming connection from client with CN {}", cn);
+                // send the message to the write_tx and it will be forwarded
+                // to the TCP stream of the client
                 let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>(30);
+                // Any message sent to the shutdown_tx will trigger disconnection
                 let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>(1);
+
                 let mut client_connection = ClientConnection::new(
                     write_tx.clone(),
                     shutdown_tx.clone(),
                     &cn,
                     &sink,
                 );
+
                 let session_id: [u8; 32] = rand::random();
                 let connected_client_entry = ConnectedClientEntry {
                     write_tx: write_tx.clone(),
@@ -162,6 +176,9 @@ async fn main() -> ResultCoapProxy<()> {
                 {
                     warn!("Failed to sink the incoming message, error: {}", e)
                 }
+                // main entry point for the client connection processing function
+                // it's looped internally, so if exited -> need to clean up everything,
+                // connection was closed
                 match client_connection
                     .process_stream(stream, write_rx, shutdown_rx)
                     .await
