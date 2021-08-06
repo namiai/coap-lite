@@ -1,10 +1,7 @@
-use std::{
-    collections::HashMap,
-    sync::Arc,
-};
-use tokio::sync::{mpsc::Sender, Mutex};
-use hex_fmt::HexFmt;
 use crate::client_connection::RequestResponseMap;
+use hex_fmt::HexFmt;
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::{mpsc::Sender, Mutex};
 
 #[derive(Debug)]
 pub struct ConnectedClientEntry {
@@ -45,7 +42,10 @@ impl ConnectedClientsTracker {
             info!("New client with the same CN {} is connected (existing session id {:10}, new session id {:10}), disconnecting the existing session", cn, HexFmt(existing_session_id), HexFmt(v.session_id));
             let _ = v.shutdown_tx.send(()).await;
         }
-        debug!("Client connected, connected count: {}", self.connected_clients_map.keys().len());
+        debug!(
+            "Client connected, connected count: {}",
+            self.connected_clients_map.keys().len()
+        );
     }
 
     pub async fn record_client_disconnected(
@@ -58,6 +58,9 @@ impl ConnectedClientsTracker {
                 self.connected_clients_map.remove(cn);
             }
         }
-        debug!("Client disconnected, connected count: {}", self.connected_clients_map.keys().len());
+        debug!(
+            "Client disconnected, connected count: {}",
+            self.connected_clients_map.keys().len()
+        );
     }
 }

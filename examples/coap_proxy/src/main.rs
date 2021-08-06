@@ -31,7 +31,9 @@ use crate::connected_clients_tracker::{
     ConnectedClientEntry, ConnectedClientsTracker,
 };
 use crate::error::CoapProxyError;
-use crate::message_sink::RedisMessageSink;
+use crate::message_sink::{
+    DeviceConnectionEvent, MessageSink, RedisMessageSink, SinkMesssage,
+};
 use crate::to_device_message_fetcher::ToDeviceMessageFetcher;
 
 extern crate redis;
@@ -150,7 +152,16 @@ async fn main() -> ResultCoapProxy<()> {
                 connected_clients_tracker
                     .write()
                     .await
-                    .record_client_connected(&cn, connected_client_entry).await;
+                    .record_client_connected(&cn, connected_client_entry)
+                    .await;
+                if let Err(e) =
+                    sink.invoke(&SinkMesssage::from_connection_event(
+                        &cn,
+                        DeviceConnectionEvent::Connect,
+                    ))
+                {
+                    warn!("Failed to sink the incoming message, error: {}", e)
+                }
                 match client_connection
                     .process_stream(stream, write_rx, shutdown_rx)
                     .await
@@ -165,6 +176,14 @@ async fn main() -> ResultCoapProxy<()> {
                     .await
                     .record_client_disconnected(&cn, session_id)
                     .await;
+                if let Err(e) =
+                    sink.invoke(&SinkMesssage::from_connection_event(
+                        &cn,
+                        DeviceConnectionEvent::Disconnect,
+                    ))
+                {
+                    warn!("Failed to sink the incoming message, error: {}", e)
+                }
             }
         });
     }

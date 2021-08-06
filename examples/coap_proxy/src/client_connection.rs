@@ -15,8 +15,9 @@ use tokio::{
 use tokio_rustls::server::TlsStream;
 
 use crate::{
-    generate_random_token, message_sink::MessageSink, CoapProxyError,
-    ResultCoapProxy,
+    generate_random_token,
+    message_sink::{MessageSink, SinkMesssage},
+    CoapProxyError, ResultCoapProxy,
 };
 
 /// Helper structure to get the path the request was made to on receiving the response
@@ -28,7 +29,7 @@ use crate::{
 pub type RequestResponseMap = HashMap<Vec<u8>, String>;
 
 #[allow(dead_code)]
-pub struct ClientConnection<'a, S: MessageSink<PacketTcp>> {
+pub struct ClientConnection<'a, S: MessageSink> {
     pub request_response_map: Arc<Mutex<RequestResponseMap>>,
     write_tx: Sender<Vec<u8>>,
     shutdown_tx: Sender<()>,
@@ -36,7 +37,7 @@ pub struct ClientConnection<'a, S: MessageSink<PacketTcp>> {
     sink: &'a Arc<S>,
 }
 
-impl<'a, S: MessageSink<PacketTcp>> ClientConnection<'a, S> {
+impl<'a, S: MessageSink> ClientConnection<'a, S> {
     pub fn new(
         write_tx: Sender<Vec<u8>>,
         shutdown_tx: Sender<()>,
@@ -157,7 +158,7 @@ impl<'a, S: MessageSink<PacketTcp>> ClientConnection<'a, S> {
     }
 }
 
-impl<'a, S: MessageSink<PacketTcp>> ClientConnection<'a, S> {
+impl<'a, S: MessageSink> ClientConnection<'a, S> {
     async fn send_pong(&self) -> ResultCoapProxy<()> {
         trace!("Sending Pong");
         let pong = CoapSignal::new(SignalType::Pong);
@@ -289,11 +290,14 @@ impl<'a, S: MessageSink<PacketTcp>> ClientConnection<'a, S> {
                     }
                     _ => "".to_owned(),
                 };
-                if let Err(e) = self.sink.process_incoming_message(
-                    parsed_packet,
-                    self.cn,
-                    &path,
-                ) {
+
+                if let Err(e) =
+                    self.sink.invoke(&SinkMesssage::from_packet_tcp(
+                        self.cn,
+                        &path,
+                        parsed_packet,
+                    ))
+                {
                     warn!("Failed to sink the incoming message, error: {}", e)
                 }
                 Ok(())

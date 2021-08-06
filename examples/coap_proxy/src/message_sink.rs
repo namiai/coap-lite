@@ -1,36 +1,87 @@
 extern crate base64;
 use crate::redis::Commands;
 use base64::encode;
-use coap_lite::Packet;
-use serde_json::json;
+use coap_lite::{Packet, PacketTcp};
+use serde::Serialize;
 use std::error::Error;
 
 /// Trait to represent message sinks:
 /// they receive the CoAP message and forward it somewhere,
 /// for example save it into redis or in the file system
-pub trait MessageSink<T>
-where
-    T: Packet,
-{
-    fn process_incoming_message(
-        &self,
-        message: T,
+pub trait MessageSink {
+    fn invoke(&self, message: &SinkMesssage) -> Result<(), MessageSinkError>;
+}
+
+#[derive(Serialize)]
+pub struct SinkMesssage {
+    cn: String,
+    content: SinkMessageContent,
+}
+
+impl SinkMesssage {
+    pub fn from_packet_tcp(cn: &str, path: &str, packet: PacketTcp) -> Self {
+        let message_class = packet.get_message_class();
+        let payload = packet.get_payload();
+
+        SinkMesssage {
+            cn: cn.to_string(),
+            content: SinkMessageContent::Response {
+                path: path.to_string(),
+                code: message_class.to_string(),
+                payload: encode(payload),
+            },
+        }
+    }
+
+    pub fn from_connection_event(
         cn: &str,
-        path: &str,
-    ) -> Result<(), MessageSinkError>;
+        event: DeviceConnectionEvent,
+    ) -> Self {
+        SinkMesssage {
+            cn: cn.to_string(),
+            content: SinkMessageContent::ConnectionEvent { event },
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type")]
+pub enum SinkMessageContent {
+    Response {
+        path: String,
+        code: String,
+        payload: String,
+    },
+    ConnectionEvent {
+        event: DeviceConnectionEvent,
+    },
+}
+
+#[derive(Serialize)]
+pub enum DeviceConnectionEvent {
+    Connect,
+    Disconnect,
 }
 
 #[derive(Debug)]
 pub enum MessageSinkError {
     InitError(String),
-    MessageForwardingError(String),
+    ForwardingError(String),
+    EncodingError(String),
 }
 
 impl std::fmt::Display for MessageSinkError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::InitError(e) => write!(f, "Failed to initialize the message sink due to the following error: {}", e),
-            Self::MessageForwardingError(e) => write!(f, "Failed to forward the message due to the following error: {}", e)
+            Self::InitError(e) => {
+                write!(f, "Failed to initialize the message sink: {}", e)
+            }
+            Self::ForwardingError(e) => {
+                write!(f, "Failed to forward the message: {}", e)
+            }
+            Self::EncodingError(e) => {
+                write!(f, "Failed to encode the message: {}", e)
+            }
         }
     }
 }
@@ -48,16 +99,8 @@ impl DevNullMessageSink {
     }
 }
 
-impl<T> MessageSink<T> for DevNullMessageSink
-where
-    T: Packet,
-{
-    fn process_incoming_message(
-        &self,
-        _: T,
-        _: &str,
-        _: &str,
-    ) -> Result<(), MessageSinkError> {
+impl MessageSink for DevNullMessageSink {
+    fn invoke(&self, _: &SinkMesssage) -> Result<(), MessageSinkError> {
         Ok(())
     }
 }
@@ -87,37 +130,21 @@ impl RedisMessageSink {
     }
 }
 
-impl<T> MessageSink<T> for RedisMessageSink
-where
-    T: Packet,
-{
+impl MessageSink for RedisMessageSink {
     // the code is synchronous!
     // consider calling it from the blocking tokio task or move to asynchronous version of redis client
-    fn process_incoming_message(
-        &self,
-        message: T,
-        cn: &str,
-        path: &str,
-    ) -> Result<(), MessageSinkError> {
-        let message_class = message.get_message_class();
-        let payload = message.get_payload();
+    fn invoke(&self, message: &SinkMesssage) -> Result<(), MessageSinkError> {
+        let mut connection = self
+            .redis_pool
+            .get()
+            .map_err(|e| MessageSinkError::ForwardingError(e.to_string()))?;
 
-        let sink_message = json!({
-            "code": message_class.to_string(),
-            "payload": encode(payload),
-            "cn": cn,
-            "path": path
-        });
-
-        let mut connection = self.redis_pool.get().map_err(|e| {
-            MessageSinkError::MessageForwardingError(e.to_string())
-        })?;
+        let message = serde_json::to_string(message)
+            .map_err(|e| MessageSinkError::EncodingError(e.to_string()))?;
 
         connection
-            .rpush(&self.key_name, sink_message.to_string())
-            .map_err(|e| {
-                MessageSinkError::MessageForwardingError(e.to_string())
-            })?;
+            .rpush(&self.key_name, message)
+            .map_err(|e| MessageSinkError::ForwardingError(e.to_string()))?;
         Ok(())
     }
 }
