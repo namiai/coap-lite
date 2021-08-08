@@ -9,6 +9,10 @@ mod message_source;
 mod to_device_message_fetcher;
 
 use argh::FromArgs;
+use banlist_checker::RedisBanListChecker;
+use client_cert_verifier::AllowAuthenticatedClientsWithNotBannedCertificates;
+use rand::distributions::Alphanumeric;
+use rand::Rng;
 use std::fs::File;
 use std::io::BufReader;
 use std::net::ToSocketAddrs;
@@ -21,9 +25,6 @@ use tokio_rustls::rustls::RootCertStore;
 use tokio_rustls::rustls::Session;
 use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
 use tokio_rustls::TlsAcceptor;
-
-use banlist_checker::RedisBanListChecker;
-use client_cert_verifier::AllowAuthenticatedClientsWithNotBannedCertificates;
 
 use crate::certificate::extract_cn_from_presented_certificates;
 use crate::client_connection::ClientConnection;
@@ -154,14 +155,14 @@ async fn main() -> ResultCoapProxy<()> {
                     &sink,
                 );
 
-                let session_id: [u8; 32] = rand::random();
+                let session_id: String = generate_session_id();
                 let connected_client_entry = ConnectedClientEntry {
                     write_tx: write_tx.clone(),
                     shutdown_tx: shutdown_tx.clone(),
                     request_response_map: client_connection
                         .request_response_map
                         .clone(),
-                    session_id,
+                    session_id: session_id.to_owned(),
                 };
                 connected_clients_tracker
                     .write()
@@ -191,7 +192,7 @@ async fn main() -> ResultCoapProxy<()> {
                 connected_clients_tracker
                     .write()
                     .await
-                    .record_client_disconnected(&cn, session_id)
+                    .record_client_disconnected(&cn, &session_id)
                     .await;
                 if let Err(e) =
                     sink.invoke(&SinkMesssage::from_connection_event(
@@ -259,4 +260,12 @@ fn load_keys(path: &Path) -> ResultCoapProxy<Vec<PrivateKey>> {
 
 pub fn generate_random_token() -> [u8; 4] {
     rand::random::<[u8; 4]>()
+}
+
+fn generate_session_id() -> String {
+    rand::thread_rng()
+        .sample_iter(Alphanumeric)
+        .take(32)
+        .map(char::from)
+        .collect()
 }

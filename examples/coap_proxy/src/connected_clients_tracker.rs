@@ -8,7 +8,7 @@ pub struct ConnectedClientEntry {
     pub write_tx: Sender<Vec<u8>>,
     pub shutdown_tx: Sender<()>,
     pub request_response_map: Arc<Mutex<RequestResponseMap>>,
-    pub session_id: [u8; 32],
+    pub session_id: String,
 }
 
 pub type ConnectedClientsMap = HashMap<String, ConnectedClientEntry>;
@@ -51,7 +51,7 @@ impl ConnectedClientsTracker {
     pub async fn record_client_disconnected(
         &mut self,
         cn: &str,
-        session_id: [u8; 32],
+        session_id: &str,
     ) {
         if let Some(entry) = self.connected_clients_map.get(cn) {
             if entry.session_id == session_id {
