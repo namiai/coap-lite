@@ -28,6 +28,8 @@ static SUPPORTED_SIG_ALGS: &[&webpki::SignatureAlgorithm] = &[
     &webpki::RSA_PKCS1_3072_8192_SHA384,
 ];
 
+/// Allows any authenticated client that has the valid, not-banned certificate
+///
 pub struct AllowAuthenticatedClientsWithNotBannedCertificates<T>
 where
     T: BanListChecker,

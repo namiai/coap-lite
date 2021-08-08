@@ -24,6 +24,8 @@ impl std::fmt::Display for CNExtractionError {
 
 impl std::error::Error for CNExtractionError {}
 
+/// Extract Common Name (CN) from presented certificate
+/// Expect client certificate to be first in the list
 pub fn extract_cn_from_presented_certificates(
     presented_certs: &[Certificate],
 ) -> Result<String, CNExtractionError> {
@@ -40,6 +42,7 @@ pub fn extract_cn_from_presented_certificates(
                 "Certificate\n Subject {},\n Issuer {}",
                 cert.tbs_certificate.subject, cert.tbs_certificate.issuer
             );
+            // Certificate -> Subject -> Common name
             let cn: &str = cert
                 .tbs_certificate
                 .subject
