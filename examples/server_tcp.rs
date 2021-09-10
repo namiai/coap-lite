@@ -1,5 +1,5 @@
 use coap_lite::{
-    CoapMessageExt, CoapOption, CoapRequest, CoapResponse, CoapSignal,
+    CoapMessageExt, CoapOption, CoapRequest, CoapSignal,
     MessageClass, Packet, PacketTcp, RequestType, SignalType,
 };
 use std::io::{BufReader, Read, Write};
@@ -128,15 +128,15 @@ fn handle_incoming_data(stream: &mut (impl Read + Write)) {
             }
         }
         match parsed_packet.get_message_class() {
-            MessageClass::Signaling(SignalType::Ping) => send_pong(stream),
+            MessageClass::Signaling(SignalType::Ping) => send_pong(stream, parsed_packet.get_token().to_owned()),
             _ => return,
         }
     }
 }
 
-fn send_pong(stream: &mut impl Write) {
+fn send_pong(stream: &mut impl Write, token: Vec<u8>) {
     println!("Sending Pong");
-    let reply = CoapSignal::new(SignalType::Pong);
+    let reply = CoapSignal::new(SignalType::Pong, token);
     stream.write_all(&reply.to_bytes().unwrap()[..]).unwrap();
 }
 
@@ -144,9 +144,7 @@ fn send_test_get(stream: &mut impl Write) {
     let mut request: CoapRequest<PacketTcp> =
         CoapRequest::new(RequestType::Get);
     request.set_path("/motion");
-    stream
-        .write_all(&request.to_bytes().unwrap()[..])
-        .unwrap();
+    stream.write_all(&request.to_bytes().unwrap()[..]).unwrap();
 }
 
 fn load_certs(filename: &str) -> Vec<rustls::Certificate> {

@@ -5,9 +5,10 @@ pub struct CoapSignal {
 }
 
 impl CoapSignal {
-    pub fn new(signal_type: SignalType) -> CoapSignal {
+    pub fn new(signal_type: SignalType, token: Vec<u8>) -> CoapSignal {
         let mut message = PacketTcp::new();
         message.set_code_from_message_class(MessageClass::Signaling(signal_type));
+        message.set_token(token);
         CoapSignal {
             message
         }
