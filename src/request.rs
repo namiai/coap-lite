@@ -94,6 +94,9 @@ impl<T: Packet> CoapRequest<T> {
        self.message.set_message_id(message_id)
     }
 
+    pub fn set_path(&mut self, path: &str) {
+        self.message.set_path(path)
+    }
 }
 
 impl CoapRequest<PacketUdp> {
