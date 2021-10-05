@@ -422,36 +422,46 @@ mod test {
     #[test]
     fn test_decode_packet_length_0() {
         let buf = [0x04, 0x01];
-        let (length, _) = PacketTcp::parse_length(&mut 0, &buf).unwrap();
+        let mut idx = 0;
+        let (length, _) = PacketTcp::parse_length(&mut idx, &buf).unwrap();
         assert_eq!(length, 0);
+        assert_eq!(idx, 1);
     }
 
     #[test]
     fn test_decode_packet_length_less_than_12() {
         let buf = [0xc4];
-        let (length, _) = PacketTcp::parse_length(&mut 0, &buf).unwrap();
+        let mut idx = 0;
+        let (length, _) = PacketTcp::parse_length(&mut idx, &buf).unwrap();
         assert_eq!(length, 12);
+        assert_eq!(idx, 1);
     }
 
     #[test]
     fn test_decode_packet_length_more_than_12_less_than_255() {
         let buf = [0xd4, 0x33];
-        let (length, _) = PacketTcp::parse_length(&mut 0, &buf).unwrap();
+        let mut idx = 0;
+        let (length, _) = PacketTcp::parse_length(&mut idx, &buf).unwrap();
         assert_eq!(length, 64);
+        assert_eq!(idx, 2);
     }
 
     #[test]
     fn test_decode_packet_length_more_than_269_less_than_65535() {
         let buf = [0xe4, 0x0e, 0xc8];
-        let (length, _) = PacketTcp::parse_length(&mut 0, &buf).unwrap();
+        let mut idx = 0;
+        let (length, _) = PacketTcp::parse_length(&mut idx, &buf).unwrap();
         assert_eq!(length, 4053);
+        assert_eq!(idx, 3);
     }
 
     #[test]
     fn test_decode_packet_length_more_than_65535() {
         let buf = [0xf4, 0x00, 0x03, 0x92, 0xf5];
-        let (length, _) = PacketTcp::parse_length(&mut 0, &buf).unwrap();
+        let mut idx = 0;
+        let (length, _) = PacketTcp::parse_length(&mut idx, &buf).unwrap();
         assert_eq!(length, 300034);
+        assert_eq!(idx, 5);
     }
 
     #[test]
