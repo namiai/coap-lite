@@ -319,7 +319,7 @@ impl PacketTcp {
                 if *idx + 2 >= buf.len() {
                     return Err(MessageError::InvalidHeader);
                 }
-                add_idx = 3;
+                add_idx = 4;
                 // in certain cases we can get overflow because the size will be more > than can fit in u32
                 // that's certainly not a valid usecase, so we can throw an error
                 u32::from_be(u8_to_unsigned_be!(buf, *idx, *idx + 3, u32))
