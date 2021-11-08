@@ -21,6 +21,7 @@ impl From<u8> for MessageClass {
             0x03 => MessageClass::Request(RequestType::Put),
             0x04 => MessageClass::Request(RequestType::Delete),
 
+            0x40 => MessageClass::Response(ResponseType::Ok),
             0x41 => MessageClass::Response(ResponseType::Created),
             0x42 => MessageClass::Response(ResponseType::Deleted),
             0x43 => MessageClass::Response(ResponseType::Valid),
