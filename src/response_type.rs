@@ -2,6 +2,7 @@
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ResponseType {
     // 200 Codes
+    Ok,
     Created,
     Deleted,
     Valid,

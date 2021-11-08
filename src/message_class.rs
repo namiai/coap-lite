@@ -80,6 +80,7 @@ impl From<MessageClass> for u8 {
             MessageClass::Signaling(SignalType::Release) => 0xE4,
             MessageClass::Signaling(SignalType::Abort) => 0xE5,
 
+            MessageClass::Response(ResponseType::Ok) => 0x40,
             MessageClass::Response(ResponseType::Created) => 0x41,
             MessageClass::Response(ResponseType::Deleted) => 0x42,
             MessageClass::Response(ResponseType::Valid) => 0x43,
