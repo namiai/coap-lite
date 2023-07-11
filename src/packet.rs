@@ -40,6 +40,7 @@ pub enum CoapOption {
     Size2,
     NoResponse,
     MaxMessageSize,
+    RequestTag,
     Unknown(u16),
 }
 
@@ -68,6 +69,7 @@ impl Display for CoapOption {
             CoapOption::Size2 => write!(f, "Size2"),
             CoapOption::NoResponse => write!(f, "No-Response"),
             CoapOption::MaxMessageSize => write!(f, "Max-Message-Size"),
+            CoapOption::RequestTag => write!(f, "Request-Tag"),
             CoapOption::Unknown(c) => write!(f, "Unknown - {}", c),
         }
     }
@@ -98,6 +100,7 @@ impl From<u16> for CoapOption {
             60 => CoapOption::Size1,
             28 => CoapOption::Size2,
             258 => CoapOption::NoResponse,
+            292 => CoapOption::NoResponse,
             _ => CoapOption::Unknown(number),
         }
     }
@@ -128,6 +131,7 @@ impl From<&CoapOption> for u16 {
             CoapOption::Size1 => 60,
             CoapOption::Size2 => 28,
             CoapOption::NoResponse => 258,
+            CoapOption::RequestTag => 292,
             CoapOption::Unknown(number) => *number,
         }
     }
