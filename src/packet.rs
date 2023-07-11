@@ -100,7 +100,7 @@ impl From<u16> for CoapOption {
             60 => CoapOption::Size1,
             28 => CoapOption::Size2,
             258 => CoapOption::NoResponse,
-            292 => CoapOption::NoResponse,
+            292 => CoapOption::RequestTag,
             _ => CoapOption::Unknown(number),
         }
     }
