@@ -18,6 +18,9 @@ impl<'a, T:'a + Packet> CoapMessageExt<'a, T> for CoapRequest<T> {
     fn get_message_mut(&mut self) -> &mut T {
         &mut self.message
     }
+    fn into_inner(self) -> T {
+        self.message
+    }
 }
 
 impl<T: Packet> CoapRequest<T> {

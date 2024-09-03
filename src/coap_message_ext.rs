@@ -1,11 +1,14 @@
 use std::collections::LinkedList;
 
-use crate::{MessageError, MessageType, Packet, packet::{CoapOption, Options}};
+use crate::{
+    packet::{CoapOption, Options},
+    MessageError, MessageType, Packet,
+};
 
-
-pub trait CoapMessageExt<'a, T:'a + Packet> {
+pub trait CoapMessageExt<'a, T: 'a + Packet> {
     fn get_message(&self) -> &T;
     fn get_message_mut(&mut self) -> &mut T;
+    fn into_inner(self) -> T;
 
     fn set_path(&mut self, path: &str) {
         let message = self.get_message_mut();
@@ -33,7 +36,7 @@ pub trait CoapMessageExt<'a, T:'a + Packet> {
         }
     }
 
-    fn set_option(&mut self, key:CoapOption, value: LinkedList<Vec<u8>>) {
+    fn set_option(&mut self, key: CoapOption, value: LinkedList<Vec<u8>>) {
         self.get_message_mut().set_option(key, value);
     }
 
